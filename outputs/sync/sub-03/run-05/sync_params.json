@@ -1,0 +1,25 @@
+{
+  "initial_offset_s": -3.939,
+  "drift_model": "none",
+  "drift_coefficients": {
+    "a": 0.0,
+    "b": -3.939
+  },
+  "window_stats": [],
+  "qc_metrics": {
+    "median_error_ms": 0.0,
+    "max_error_ms": 0.0,
+    "drift_rate_ppm": 0.0,
+    "sync_quality": "excellent",
+    "n_windows": 0,
+    "peak_correlation": 0.8635656144763261,
+    "alignment_strategy": "Energy envelopes",
+    "alignment_method": "full-signal",
+    "full_signal_correlation": 0.8635656144763261
+  },
+  "meg_sfreq": 1000.0,
+  "ext_sfreq": 44100.0,
+  "aux_channel": "MISC 007",
+  "meg_duration_s": 370.0,
+  "ext_duration_s": 360.61
+}

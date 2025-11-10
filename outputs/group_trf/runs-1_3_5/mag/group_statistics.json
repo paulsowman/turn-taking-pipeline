@@ -1,0 +1,87 @@
+{
+  "envelope_trf": {
+    "n_subjects": 5,
+    "mean_amplitude_range": [
+      -0.0012178438159719067,
+      0.001445895847949632
+    ],
+    "polarity_aligned": true,
+    "polarity_alignment": {
+      "total_flips": 32,
+      "pct_flipped": 32.0,
+      "n_flipped_per_sensor": [
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+        1,
+        2,
+        2,
+        1,
+        1,
+        2,
+        1,
+        2,
+        2,
+        2,
+        1,
+        2,
+        2
+      ]
+    }
+  },
+  "f0_trf": {
+    "n_subjects": 5,
+    "mean_amplitude_range": [
+      -0.0011241572859853246,
+      0.0012979829779464758
+    ],
+    "polarity_aligned": true,
+    "polarity_alignment": {
+      "total_flips": 26,
+      "pct_flipped": 26.0,
+      "n_flipped_per_sensor": [
+        2,
+        0,
+        2,
+        1,
+        2,
+        2,
+        1,
+        2,
+        2,
+        1,
+        0,
+        1,
+        2,
+        2,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "correlations": {
+    "full": {
+      "mean": 0.034607622289623094,
+      "std": 0.0070412158557336835,
+      "sem": 0.0035206079278668413
+    },
+    "envelope_only": {
+      "mean": 0.02734532271238923,
+      "std": 0.007343301793942588,
+      "sem": 0.0036716508969712935
+    },
+    "f0_only": {
+      "mean": 0.026551922914499905,
+      "std": 0.006311795400863829,
+      "sem": 0.0031558977004319142
+    }
+  }
+}

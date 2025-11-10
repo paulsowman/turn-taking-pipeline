@@ -1,0 +1,9 @@
+{
+  "subject": "sub-19",
+  "sensor_type": "mag",
+  "n_events": 196,
+  "erf_peak_latency_ms": 83.0,
+  "erf_peak_channel": "MEG 125",
+  "trf_correlation_mean": 0.07905670060451492,
+  "trf_correlation_max": 0.36414143408018723
+}

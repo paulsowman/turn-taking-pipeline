@@ -1,0 +1,32 @@
+======================================================================
+AUDIO-MEG SYNCHRONIZATION QUALITY CONTROL REPORT
+======================================================================
+
+RECORDING INFORMATION
+----------------------------------------------------------------------
+MEG duration:      190.00 seconds
+External duration: 180.32 seconds
+MEG sampling rate: 1000.0 Hz
+Ext sampling rate: 44100.0 Hz
+Aux channel:       MISC 007
+
+SYNCHRONIZATION RESULTS
+----------------------------------------------------------------------
+Initial offset:    -5.4680 seconds
+Drift model:       none
+Drift equation:    offset(t) = 0.000000e+00 * t + -5.4680
+Drift rate:        0.00 ppm
+
+QUALITY METRICS
+----------------------------------------------------------------------
+Median alignment error: 0.00 ms
+Max alignment error:    0.00 ms
+Number of windows:      0
+Sync quality:           EXCELLENT
+
+PASS/FAIL CRITERIA
+----------------------------------------------------------------------
+✓ EXCELLENT: Median error < 10.0 ms
+
+
+======================================================================

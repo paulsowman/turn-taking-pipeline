@@ -1,0 +1,15 @@
+{
+  "subject": "sub-01",
+  "runs": [
+    2,
+    4
+  ],
+  "sensor_type": "mag",
+  "envelope_method": "rms",
+  "n_sensors": 159,
+  "total_duration_s": 379.998,
+  "envelope_sr_hz": 100.0,
+  "model_correlation_mean": 0.026244262225758447,
+  "model_correlation_max": 0.06281100892547739,
+  "n_runs_combined": 2
+}

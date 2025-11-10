@@ -1,0 +1,1285 @@
+#!/usr/bin/env python
+"""
+Multi-Predictor TRF Analysis for Multiple Runs
+
+Fits TRF models with multiple acoustic/linguistic predictors:
+- Acoustic envelope (RMS)
+- F0 (fundamental frequency/pitch)
+
+Includes drop-one analysis to quantify individual predictor contributions.
+"""
+
+import numpy as np
+import mne
+import eelbrain
+import librosa
+import matplotlib.pyplot as plt
+from pathlib import Path
+import json
+import argparse
+from scipy.interpolate import interp1d
+import pickle
+
+
+def load_roi_sensors(roi_json_path):
+    """Load ROI sensor names from JSON file."""
+    with open(roi_json_path, 'r') as f:
+        roi_data = json.load(f)
+
+    left_sensors = roi_data['left_hemisphere']['names']
+    right_sensors = roi_data['right_hemisphere']['names']
+
+    return left_sensors + right_sensors
+
+
+def load_synchronized_audio(subject, run, base_dir):
+    """Load audio file and get sync offset."""
+    # Get audio file path from config
+    from utils.config import load_config, get_subject_paths
+
+    config = load_config()
+    paths = get_subject_paths(subject, run, config)
+
+    if 'external_audio_interviewer' not in paths:
+        raise FileNotFoundError(f"No audio file found for {subject} run {run}")
+
+    audio_file = paths['external_audio_interviewer']
+
+    print(f"  Loading audio: {audio_file}")
+    audio, sr = librosa.load(audio_file, sr=None)
+
+    # Load sync parameters
+    sync_dir = base_dir / "outputs" / "sync" / subject / f"run-{run:02d}"
+    sync_params_file = sync_dir / "sync_params.json"
+
+    if not sync_params_file.exists():
+        raise FileNotFoundError(f"Sync params not found: {sync_params_file}")
+
+    with open(sync_params_file, 'r') as f:
+        sync_params = json.load(f)
+    sync_offset = sync_params['initial_offset_s']
+
+    print(f"  Audio: {len(audio)/sr:.1f}s @ {sr} Hz")
+    print(f"  Sync offset: {sync_offset:.3f}s")
+
+    return audio, sr, sync_offset
+
+
+def compute_acoustic_envelope(audio, sr, method='rms', frame_length=None, hop_length=None):
+    """
+    Compute acoustic envelope using RMS method.
+
+    Parameters
+    ----------
+    audio : np.ndarray
+        Audio waveform
+    sr : int
+        Sample rate of audio
+    method : str
+        'rms' or 'hilbert'
+    frame_length : int, optional
+        Frame length in samples for RMS (default: 25ms)
+    hop_length : int, optional
+        Hop length in samples (default: 10ms, giving ~100 Hz envelope)
+
+    Returns
+    -------
+    envelope : np.ndarray
+        Acoustic envelope
+    envelope_times : np.ndarray
+        Time points for envelope
+    envelope_sr : float
+        Effective sample rate of envelope
+    """
+    if method == 'rms':
+        if frame_length is None:
+            frame_length = int(0.025 * sr)  # 25ms
+        if hop_length is None:
+            hop_length = int(0.010 * sr)    # 10ms → ~100 Hz
+
+        envelope = librosa.feature.rms(y=audio, frame_length=frame_length, hop_length=hop_length)[0]
+        envelope_times = np.arange(len(envelope)) * hop_length / sr
+        envelope_sr = sr / hop_length
+
+    elif method == 'hilbert':
+        from scipy.signal import hilbert
+        analytic_signal = hilbert(audio)
+        envelope = np.abs(analytic_signal)
+
+        # Downsample to ~100 Hz
+        if hop_length is None:
+            hop_length = int(0.010 * sr)
+        envelope = envelope[::hop_length]
+        envelope_times = np.arange(len(envelope)) * hop_length / sr
+        envelope_sr = sr / hop_length
+
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+    return envelope, envelope_times, envelope_sr
+
+
+def compute_f0(audio, sr, hop_length=None, fmin=80, fmax=400):
+    """
+    Extract F0 (fundamental frequency/pitch) using librosa pyin.
+
+    Parameters
+    ----------
+    audio : np.ndarray
+        Audio waveform
+    sr : int
+        Sample rate
+    hop_length : int, optional
+        Hop length in samples (default: 10ms for ~100 Hz)
+    fmin : float
+        Minimum F0 frequency (Hz)
+    fmax : float
+        Maximum F0 frequency (Hz)
+
+    Returns
+    -------
+    f0 : np.ndarray
+        F0 contour (NaN for unvoiced segments)
+    f0_times : np.ndarray
+        Time points for F0
+    f0_sr : float
+        Effective sample rate of F0
+    """
+    if hop_length is None:
+        hop_length = int(0.010 * sr)  # 10ms → ~100 Hz
+
+    # Extract F0 using pyin (probabilistic YIN algorithm)
+    f0, voiced_flag, voiced_probs = librosa.pyin(
+        audio,
+        sr=sr,
+        fmin=fmin,
+        fmax=fmax,
+        hop_length=hop_length,
+        frame_length=int(0.025 * sr),  # 25ms frames
+        fill_na=0.0  # Fill unvoiced segments with 0
+    )
+
+    f0_times = np.arange(len(f0)) * hop_length / sr
+    f0_sr = sr / hop_length
+
+    # Log-transform F0 (better for neural processing)
+    # Add small epsilon to avoid log(0)
+    f0_log = np.log(f0 + 1e-6)
+
+    # Replace log(epsilon) with 0
+    f0_log[f0 == 0] = 0
+
+    return f0_log, f0_times, f0_sr
+
+
+def align_feature_to_meg(feature, feature_times, sync_offset, meg_times):
+    """
+    Align acoustic feature to MEG time base with optional filtering.
+
+    Parameters
+    ----------
+    feature : np.ndarray
+        Feature values
+    feature_times : np.ndarray
+        Times for feature (in audio timebase)
+    sync_offset : float
+        Sync offset in seconds. Positive means external audio starts AFTER MEG.
+    meg_times : np.ndarray
+        MEG time points
+
+    Returns
+    -------
+    feature_meg : np.ndarray
+        Feature interpolated and filtered to match MEG preprocessing
+    """
+    # Adjust feature times to MEG timebase
+    # Positive offset means external audio starts AFTER MEG, so ADD offset
+    # Formula: meg_time = audio_time + offset
+    feature_times_meg = feature_times + sync_offset
+
+    # Linear interpolation to MEG sampling rate
+    interp_func = interp1d(
+        feature_times_meg,
+        feature,
+        kind='linear',
+        bounds_error=False,
+        fill_value=0
+    )
+
+    feature_meg = interp_func(meg_times)
+
+    # *** FILTER FEATURES TO MATCH MEG FILTERING (0.5-20 Hz) ***
+    # Import scipy.signal for filtering
+    from scipy.signal import butter, filtfilt
+
+    # Determine MEG sampling rate
+    meg_sfreq = 1.0 / np.median(np.diff(meg_times))  # Estimate from time vector
+
+    # Design butterworth bandpass filter to match MEG filtering
+    nyq = meg_sfreq / 2
+    low = 0.5 / nyq
+    high = 20.0 / nyq
+
+    # Ensure cutoffs are valid (< 1.0)
+    if high >= 1.0:
+        high = 0.99
+
+    b, a = butter(3, [low, high], btype='band')
+
+    # Apply zero-phase filter
+    feature_meg_filtered = filtfilt(b, a, feature_meg)
+
+    return feature_meg_filtered
+
+
+def apply_smooth_masking(data, mask, sfreq, taper_ms=200):
+    """
+    Apply masking with smooth cosine tapers at edges to avoid artifacts.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Data to mask (1D array)
+    mask : np.ndarray
+        Boolean mask (True = keep, False = zero out)
+    sfreq : float
+        Sampling frequency in Hz
+    taper_ms : float
+        Taper duration in milliseconds (applied to each edge)
+
+    Returns
+    -------
+    masked_data : np.ndarray
+        Data with smooth masking applied
+    """
+    masked_data = data.copy()
+    taper_samples = int(taper_ms * sfreq / 1000)
+
+    # Find transitions in mask
+    mask_diff = np.diff(mask.astype(int))
+    onset_indices = np.where(mask_diff == 1)[0] + 1  # Transition from False to True
+    offset_indices = np.where(mask_diff == -1)[0] + 1  # Transition from True to False
+
+    # Create cosine taper (Tukey window shape)
+    taper = 0.5 * (1 - np.cos(np.pi * np.arange(taper_samples) / taper_samples))
+
+    # Apply fade-in at onsets
+    for onset in onset_indices:
+        start = onset
+        end = min(onset + taper_samples, len(masked_data))
+        actual_taper_len = end - start
+        if actual_taper_len > 0:
+            masked_data[start:end] *= taper[:actual_taper_len]
+
+    # Apply fade-out at offsets
+    for offset in offset_indices:
+        start = max(0, offset - taper_samples)
+        end = offset
+        actual_taper_len = end - start
+        if actual_taper_len > 0:
+            masked_data[start:end] *= taper[:actual_taper_len][::-1]  # Reverse for fade-out
+
+    # Zero out non-masked regions
+    masked_data[~mask] = 0
+
+    return masked_data
+
+
+def identify_speaker_from_audio(subject, run, base_dir, meg_times, ratio_threshold=2.0, smooth_ms=100):
+    """
+    Identify who is speaking at each timepoint using envelope ratio from both mics.
+
+    Uses separate microphone recordings for participant and interviewer to determine
+    speaker identity based on relative RMS envelope levels (ratio-based approach).
+
+    Parameters
+    ----------
+    subject : str
+        Subject ID
+    run : int
+        Run number
+    base_dir : Path
+        Base directory
+    meg_times : np.ndarray
+        MEG timepoints (typically 1000 Hz or 200 Hz after downsampling)
+    ratio_threshold : float
+        Ratio threshold for speaker detection. Interviewer is considered speaking
+        when interviewer_rms / participant_rms > ratio_threshold (default: 2.0)
+    smooth_ms : float
+        Gaussian smoothing window in milliseconds for envelope smoothing (default: 100ms)
+
+    Returns
+    -------
+    listener_mask : np.ndarray
+        Boolean mask: True when participant is listening (interviewer speaking),
+        False when participant is speaking or silence
+    """
+    from utils.config import load_config, get_subject_paths
+    from scipy.interpolate import interp1d
+    from scipy.ndimage import gaussian_filter1d
+
+    print("  Identifying speaker from dual-microphone recordings...")
+    print(f"    Method: Envelope ratio (threshold={ratio_threshold}, smooth={smooth_ms}ms)")
+
+    config = load_config()
+    paths = get_subject_paths(subject, run, config)
+
+    if 'external_audio_interviewer' not in paths or 'external_audio_participant' not in paths:
+        raise FileNotFoundError(f"Both audio channels required for speaker identification")
+
+    # Load both audio channels
+    interviewer_audio, sr = librosa.load(paths['external_audio_interviewer'], sr=None)
+    participant_audio, _ = librosa.load(paths['external_audio_participant'], sr=sr)
+
+    # Ensure both channels have same length (truncate to shorter if needed)
+    min_length = min(len(interviewer_audio), len(participant_audio))
+    if len(interviewer_audio) != len(participant_audio):
+        print(f"    Warning: Audio channels have different lengths: interviewer={len(interviewer_audio)}, participant={len(participant_audio)}")
+        print(f"    Truncating to {min_length} samples ({min_length/sr:.2f}s)")
+        interviewer_audio = interviewer_audio[:min_length]
+        participant_audio = participant_audio[:min_length]
+
+    # Load sync offset
+    sync_dir = base_dir / "outputs" / "sync" / subject / f"run-{run:02d}"
+    sync_params_file = sync_dir / "sync_params.json"
+    with open(sync_params_file, 'r') as f:
+        sync_params = json.load(f)
+    sync_offset = sync_params['initial_offset_s']
+
+    # Compute RMS energy for both channels
+    hop_length = int(0.010 * sr)  # 10ms hops
+    interviewer_rms = librosa.feature.rms(y=interviewer_audio, hop_length=hop_length)[0]
+    participant_rms = librosa.feature.rms(y=participant_audio, hop_length=hop_length)[0]
+
+    # Apply Gaussian smoothing to reduce noise
+    if smooth_ms > 0:
+        sigma_samples = smooth_ms / 10  # hop is 10ms
+        interviewer_rms = gaussian_filter1d(interviewer_rms, sigma=sigma_samples)
+        participant_rms = gaussian_filter1d(participant_rms, sigma=sigma_samples)
+
+    # Time base for RMS
+    rms_times_audio = np.arange(len(interviewer_rms)) * hop_length / sr
+    # Positive offset means external starts AFTER MEG, so ADD offset to external time
+    rms_times_meg = rms_times_audio + sync_offset
+
+    # Interpolate to MEG sampling rate
+    # Use fill_value=0 for out-of-bounds regions (when audio is shorter than MEG)
+    # This handles cases where recordings have different durations
+    interp_interviewer = interp1d(rms_times_meg, interviewer_rms,
+                                   kind='nearest', bounds_error=False, fill_value=0)
+    interp_participant = interp1d(rms_times_meg, participant_rms,
+                                    kind='nearest', bounds_error=False, fill_value=0)
+
+    interviewer_rms_meg = interp_interviewer(meg_times)
+    participant_rms_meg = interp_participant(meg_times)
+
+    # Determine noise floor (10th percentile of maximum of both channels)
+    combined = np.maximum(interviewer_rms_meg, participant_rms_meg)
+    noise_floor = np.percentile(combined, 10)
+
+    # Envelope ratio method
+    eps = 1e-10
+    ratio_int = interviewer_rms_meg / (participant_rms_meg + eps)
+
+    # Listener when interviewer is louder by factor of ratio_threshold
+    # Also require minimum absolute level above noise floor
+    int_active = (interviewer_rms_meg > noise_floor * 2)
+    listener_mask = (ratio_int > ratio_threshold) & int_active
+
+    # Statistics
+    part_active = (participant_rms_meg > noise_floor * 2)
+    ratio_part = participant_rms_meg / (interviewer_rms_meg + eps)
+    speaker_mask = (ratio_part > ratio_threshold) & part_active
+
+    both_active = int_active & part_active
+    overlap_mask = both_active & ~listener_mask & ~speaker_mask
+
+    silence_mask = ~listener_mask & ~speaker_mask & ~overlap_mask
+
+    interviewer_only_pct = 100 * np.sum(listener_mask) / len(meg_times)
+    participant_only_pct = 100 * np.sum(speaker_mask) / len(meg_times)
+    both_speaking_pct = 100 * np.sum(overlap_mask) / len(meg_times)
+    silence_pct = 100 * np.sum(silence_mask) / len(meg_times)
+
+    print(f"    Interviewer only (listening):  {interviewer_only_pct:.1f}%")
+    print(f"    Participant only (speaking):   {participant_only_pct:.1f}%")
+    print(f"    Both speaking (overlap):       {both_speaking_pct:.1f}%")
+    print(f"    Silence:                       {silence_pct:.1f}%")
+    print(f"    Noise floor: {noise_floor:.6f}")
+
+    return listener_mask
+
+
+def load_and_process_run(subject, run, meg_file, sensor_type, base_dir, listener_only=False, roi_sensors_json=None):
+    """Load and process a single run with all predictors."""
+    print(f"\n{'='*70}")
+    print(f"PROCESSING RUN {run}")
+    print(f"{'='*70}\n")
+
+    # Load synchronized audio
+    print("Loading synchronized audio...")
+    audio, sr, sync_offset = load_synchronized_audio(subject, run, base_dir)
+
+    # Compute acoustic envelope
+    print(f"\nComputing acoustic envelope...")
+    envelope, envelope_times, envelope_sr = compute_acoustic_envelope(
+        audio, sr, method='rms'
+    )
+    print(f"  Envelope: {len(envelope)} samples @ {envelope_sr:.1f} Hz")
+
+    # Compute F0
+    print(f"\nComputing F0 (pitch)...")
+    f0, f0_times, f0_sr = compute_f0(audio, sr)
+    print(f"  F0: {len(f0)} samples @ {f0_sr:.1f} Hz")
+    voiced_pct = 100 * np.sum(f0 != 0) / len(f0)
+    print(f"  Voiced segments: {voiced_pct:.1f}%")
+
+    # Load MEG data
+    print("\nLoading MEG data...")
+    meg_raw = mne.io.read_raw_fif(meg_file, preload=True, verbose=False)
+
+    # Handle EEG vs MEG sensor selection
+    if sensor_type == 'eeg':
+        picks = mne.pick_types(meg_raw.info, meg=False, eeg=True, exclude='bads')
+    else:
+        picks = mne.pick_types(meg_raw.info, meg=sensor_type, eeg=False, exclude='bads')
+
+    # Apply ROI sensor selection if specified
+    if roi_sensors_json is not None:
+        roi_sensor_names = load_roi_sensors(roi_sensors_json)
+        # Get channel names for picked sensors
+        ch_names = [meg_raw.ch_names[p] for p in picks]
+        # Filter to only ROI sensors
+        roi_picks = [p for p, ch in zip(picks, ch_names) if ch in roi_sensor_names]
+        picks = np.array(roi_picks)
+        print(f"  Applied ROI filter: {len(picks)} sensors")
+
+    # *** CRITICAL PREPROCESSING: FILTER MEG DATA ***
+    print("\nFiltering MEG data...")
+    print(f"  Applying 0.5-20 Hz bandpass filter (critical for TRF analysis)")
+    meg_raw.filter(
+        l_freq=0.5,   # High-pass: remove slow drifts
+        h_freq=20.0,  # Low-pass: speech envelope tracking band
+        picks=picks,
+        filter_length='auto',
+        l_trans_bandwidth='auto',
+        h_trans_bandwidth='auto',
+        phase='zero',  # Zero-phase filter (no temporal shift)
+        fir_design='firwin',
+        verbose=False
+    )
+
+    # Optional: Downsample for computational efficiency
+    original_sfreq = meg_raw.info['sfreq']
+    if original_sfreq > 200:
+        print(f"  Downsampling from {original_sfreq} Hz to 200 Hz...")
+        meg_raw.resample(200.0, npad='auto', verbose=False)
+
+    meg_data, meg_times = meg_raw[picks, :]
+    sfreq = meg_raw.info['sfreq']
+
+    print(f"  Sensors: {len(picks)} {sensor_type}")
+    print(f"  Duration: {meg_times[-1]:.1f}s")
+    print(f"  Sampling rate: {sfreq} Hz")
+    print(f"  Filtered: 0.5-20 Hz")
+
+    # Align features to MEG
+    print("\nAligning features to MEG...")
+    envelope_meg = align_feature_to_meg(envelope, envelope_times, sync_offset, meg_times)
+    f0_meg = align_feature_to_meg(f0, f0_times, sync_offset, meg_times)
+
+    print(f"  Envelope stats: mean={envelope_meg.mean():.6f}, max={envelope_meg.max():.6f}")
+    print(f"  F0 stats: mean={f0_meg[f0_meg!=0].mean():.3f}, max={f0_meg.max():.3f}")
+
+    # Apply listener-only mask if requested
+    listener_mask = None
+    if listener_only:
+        print("\nApplying listener-only mask...")
+        try:
+            # Use dual-microphone speaker identification (robust to consecutive turns)
+            listener_mask = identify_speaker_from_audio(subject, run, base_dir, meg_times)
+
+            listening_pct = 100 * np.sum(listener_mask) / len(listener_mask)
+            print(f"  Listener periods: {listening_pct:.1f}% of recording")
+            print(f"  {np.sum(listener_mask)/sfreq:.1f}s listening / {len(meg_times)/sfreq:.1f}s total")
+
+            # Apply smooth tapering to avoid edge artifacts
+            taper_ms = 200  # 200ms taper on each edge
+            envelope_meg = apply_smooth_masking(envelope_meg, listener_mask, sfreq, taper_ms)
+            f0_meg = apply_smooth_masking(f0_meg, listener_mask, sfreq, taper_ms)
+            print(f"  Applied {taper_ms}ms cosine taper at listening period edges")
+
+        except Exception as e:
+            print(f"  Warning: Could not apply listener mask: {e}")
+            print(f"  Continuing without masking...")
+            listener_mask = None
+
+    return meg_data, envelope_meg, f0_meg, meg_times, meg_raw.info, picks, listener_mask
+
+
+def combine_runs(run_data_list, trim_onset_ms=1000, trim_offset_ms=500):
+    """
+    Concatenate data from multiple runs with onset/offset artifact removal.
+
+    Parameters
+    ----------
+    run_data_list : list
+        List of run data dictionaries
+    trim_onset_ms : float
+        Milliseconds to trim from start of each run (default: 1000ms)
+        Removes stimulus onset transients
+    trim_offset_ms : float
+        Milliseconds to trim from end of each run (default: 500ms)
+    """
+    print(f"\n{'='*70}")
+    print("CONCATENATING RUNS WITH EDGE TRIMMING")
+    print(f"{'='*70}\n")
+    print(f"Trimming {trim_onset_ms}ms from onset, {trim_offset_ms}ms from offset of each run")
+    print(f"(Prevents fitting to stimulus onset transients)\n")
+
+    meg_list = []
+    envelope_list = []
+    f0_list = []
+    mask_list = []
+
+    for i, rd in enumerate(run_data_list):
+        # Get sampling frequency from first run
+        # After downsampling, sfreq should be 200 Hz
+        n_samples = rd['meg'].shape[1]
+        duration_s = n_samples / 200  # Assume 200 Hz after downsampling
+        sfreq = 200.0  # Hz
+
+        # Calculate trim indices
+        onset_idx = int(trim_onset_ms * sfreq / 1000)
+        offset_idx = n_samples - int(trim_offset_ms * sfreq / 1000)
+
+        # Ensure we don't trim more than available
+        onset_idx = min(onset_idx, n_samples // 4)  # Max 25% trim
+        offset_idx = max(offset_idx, 3 * n_samples // 4)  # Max 25% trim
+
+        # Trim data
+        meg_trimmed = rd['meg'][:, onset_idx:offset_idx]
+        envelope_trimmed = rd['envelope'][onset_idx:offset_idx]
+        f0_trimmed = rd['f0'][onset_idx:offset_idx]
+
+        meg_list.append(meg_trimmed)
+        envelope_list.append(envelope_trimmed)
+        f0_list.append(f0_trimmed)
+
+        if 'mask' in rd and rd['mask'] is not None:
+            mask_list.append(rd['mask'][onset_idx:offset_idx])
+
+        trimmed_duration = (offset_idx - onset_idx) / sfreq
+        print(f"  Run {i+1}: {n_samples} samples ({duration_s:.1f}s) → {meg_trimmed.shape[1]} samples ({trimmed_duration:.1f}s)")
+
+    meg_combined = np.concatenate(meg_list, axis=1)
+    envelope_combined = np.concatenate(envelope_list)
+    f0_combined = np.concatenate(f0_list)
+
+    # Combine masks if they exist
+    mask_combined = None
+    if len(mask_list) > 0:
+        mask_combined = np.concatenate(mask_list)
+
+    # Create combined time array
+    time_offsets = [0]
+    for rd in run_data_list[:-1]:
+        time_offsets.append(time_offsets[-1] + rd['times'][-1])
+
+    times_combined = []
+    for i, rd in enumerate(run_data_list):
+        times_combined.append(rd['times'] + time_offsets[i])
+    times_combined = np.concatenate(times_combined)
+
+    print(f"  Combined MEG shape: {meg_combined.shape}")
+    print(f"  Combined envelope length: {len(envelope_combined)}")
+    print(f"  Combined F0 length: {len(f0_combined)}")
+    print(f"  Total duration: {times_combined[-1]:.1f}s")
+
+    if mask_combined is not None:
+        listening_pct = 100 * np.sum(mask_combined) / len(mask_combined)
+        print(f"  Combined listening periods: {listening_pct:.1f}% of total")
+
+    return meg_combined, envelope_combined, f0_combined, times_combined, mask_combined
+
+
+def fit_multipredictor_trf(meg_data, envelope, f0, times, sensor_dim, tstart=-0.2, tstop=0.5):
+    """
+    Fit TRF model with multiple predictors using eelbrain boosting.
+
+    Also performs drop-one analysis to measure individual predictor contributions.
+    """
+    print(f"\n{'='*70}")
+    print("FITTING MULTI-PREDICTOR TRF MODEL")
+    print(f"{'='*70}\n")
+
+    print("Converting to eelbrain format...")
+    # After downsampling to 200 Hz, time step is 1/200 = 5ms
+    time_dim = eelbrain.UTS(0, 1/200.0, meg_data.shape[1])
+
+    meg_ndvar = eelbrain.NDVar(
+        meg_data,
+        dims=(sensor_dim, time_dim),
+        name='MEG'
+    )
+
+    # Create predictor NDVars
+    envelope_ndvar = eelbrain.NDVar(
+        envelope,
+        dims=(time_dim,),
+        name='Envelope'
+    )
+
+    f0_ndvar = eelbrain.NDVar(
+        f0,
+        dims=(time_dim,),
+        name='F0'
+    )
+
+    print(f"  MEG shape: {meg_data.shape}")
+    print(f"  Envelope shape: {envelope.shape}")
+    print(f"  F0 shape: {f0.shape}")
+
+    # === FULL MODEL (all predictors) ===
+    print("\n" + "="*70)
+    print("FITTING FULL MODEL (Envelope + F0)")
+    print("="*70)
+    print(f"  TRF window: {tstart*1000:.0f}ms to {tstop*1000:.0f}ms")
+    print(f"  This may take 10-15 minutes...")
+
+    # Pass predictors as a tuple (eelbrain expects tuple/list for multiple predictors)
+    predictors = (envelope_ndvar, f0_ndvar)
+
+    trf_full = eelbrain.boosting(
+        meg_ndvar,
+        predictors,
+        tstart=tstart,
+        tstop=tstop,
+        scale_data=True,
+        delta=0.005,
+        mindelta=0.0005,
+        error='l1',
+    )
+
+    print(f"\n✓ Full model complete!")
+    print(f"  Model correlation: {trf_full.r.mean():.4f}")
+    print(f"  Max correlation: {trf_full.r.max():.4f}")
+
+    # === DROP-ONE ANALYSIS ===
+    print("\n" + "="*70)
+    print("DROP-ONE ANALYSIS (quantifying predictor contributions)")
+    print("="*70)
+
+    # Model with envelope only (drop F0)
+    print("\nFitting model: Envelope only (drop F0)...")
+    trf_envelope_only = eelbrain.boosting(
+        meg_ndvar,
+        envelope_ndvar,
+        tstart=tstart,
+        tstop=tstop,
+        scale_data=True,
+        delta=0.005,
+        mindelta=0.0005,
+        error='l1',
+    )
+    print(f"  Correlation: {trf_envelope_only.r.mean():.4f}")
+
+    # Model with F0 only (drop envelope)
+    print("\nFitting model: F0 only (drop Envelope)...")
+    trf_f0_only = eelbrain.boosting(
+        meg_ndvar,
+        f0_ndvar,
+        tstart=tstart,
+        tstop=tstop,
+        scale_data=True,
+        delta=0.005,
+        mindelta=0.0005,
+        error='l1',
+    )
+    print(f"  Correlation: {trf_f0_only.r.mean():.4f}")
+
+    # Calculate unique contributions
+    print("\n" + "="*70)
+    print("PREDICTOR CONTRIBUTIONS")
+    print("="*70)
+
+    r_full = trf_full.r.mean()
+    r_env_only = trf_envelope_only.r.mean()
+    r_f0_only = trf_f0_only.r.mean()
+
+    # Unique contribution = drop in performance when predictor is removed
+    f0_contribution = r_full - r_env_only
+    envelope_contribution = r_full - r_f0_only
+
+    print(f"\nFull model:         {r_full:.4f}")
+    print(f"Envelope only:      {r_env_only:.4f}")
+    print(f"F0 only:            {r_f0_only:.4f}")
+    print(f"\nUnique contributions:")
+    print(f"  Envelope: {envelope_contribution:.4f} ({100*envelope_contribution/r_full:.1f}% of full model)")
+    print(f"  F0:       {f0_contribution:.4f} ({100*f0_contribution/r_full:.1f}% of full model)")
+
+    results = {
+        'full': trf_full,
+        'envelope_only': trf_envelope_only,
+        'f0_only': trf_f0_only,
+        'correlations': {
+            'full': float(r_full),
+            'envelope_only': float(r_env_only),
+            'f0_only': float(r_f0_only)
+        },
+        'contributions': {
+            'envelope': float(envelope_contribution),
+            'f0': float(f0_contribution)
+        }
+    }
+
+    return results, meg_ndvar
+
+
+def create_visualizations(results, meg_ndvar, envelope, f0, output_dir):
+    """Create comprehensive visualizations."""
+    print(f"\n{'='*70}")
+    print("CREATING VISUALIZATIONS")
+    print(f"{'='*70}\n")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    trf_full = results['full']
+
+    # 1. Model comparison bar plot
+    print("  1. Model comparison...")
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    models = ['Full\n(Env + F0)', 'Envelope\nonly', 'F0\nonly']
+    corrs = [
+        results['correlations']['full'],
+        results['correlations']['envelope_only'],
+        results['correlations']['f0_only']
+    ]
+
+    colors = ['#2E86AB', '#A23B72', '#F18F01']
+    bars = ax.bar(models, corrs, color=colors, alpha=0.7, edgecolor='black', linewidth=2)
+
+    ax.set_ylabel('Mean Correlation', fontsize=12)
+    ax.set_title('Multi-Predictor TRF Model Comparison', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.set_ylim(0, max(corrs) * 1.2)
+
+    # Add value labels on bars
+    for bar, corr in zip(bars, corrs):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{corr:.4f}',
+                ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig(output_dir / 'model_comparison.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"    ✓ Saved: model_comparison.png")
+
+    # 2. Predictor contributions
+    print("  2. Predictor contributions...")
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    predictors = ['Envelope', 'F0']
+    contributions = [
+        results['contributions']['envelope'],
+        results['contributions']['f0']
+    ]
+
+    colors = ['#A23B72', '#F18F01']
+    bars = ax.bar(predictors, contributions, color=colors, alpha=0.7, edgecolor='black', linewidth=2)
+
+    ax.set_ylabel('Unique Contribution (Δr)', fontsize=12)
+    ax.set_title('Unique Predictor Contributions (Drop-One Analysis)', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add value labels
+    for bar, contrib in zip(bars, contributions):
+        height = bar.get_height()
+        pct = 100 * contrib / results['correlations']['full']
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{contrib:.4f}\n({pct:.1f}%)',
+                ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig(output_dir / 'predictor_contributions.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"    ✓ Saved: predictor_contributions.png")
+
+    # 3. TRF Correlation Distribution (full model)
+    print("  3. TRF correlation distribution...")
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    corr_values = trf_full.r.x if hasattr(trf_full.r, 'x') else np.array(trf_full.r)
+    ax.hist(corr_values, bins=50, edgecolor='black', alpha=0.7, color='#2E86AB')
+    ax.axvline(corr_values.mean(), color='r', linestyle='--', linewidth=2,
+               label=f'Mean: {corr_values.mean():.4f}')
+    ax.axvline(corr_values.max(), color='g', linestyle='--', linewidth=2,
+               label=f'Max: {corr_values.max():.4f}')
+    ax.set_xlabel('Correlation', fontsize=12)
+    ax.set_ylabel('Number of Sensors', fontsize=12)
+    ax.set_title('Full Model Correlation Distribution', fontsize=14, fontweight='bold')
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
+
+    plt.savefig(output_dir / 'trf_correlation_dist.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"    ✓ Saved: trf_correlation_dist.png")
+
+    # 4. TRF Kernels (impulse responses) - with both polarity-aligned and RMS
+    print("  4. TRF kernel plots...")
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+
+    # Get TRF models
+    trf_env_only = results['envelope_only']
+    trf_f0_only = results['f0_only']
+
+    # Extract kernel data and times
+    # For full model with multiple predictors, h is a tuple (h_env, h_f0)
+    if isinstance(trf_full.h, tuple):
+        h_env_full = trf_full.h[0]  # Envelope kernel from full model
+        h_f0_full = trf_full.h[1]   # F0 kernel from full model
+    else:
+        # Fallback if structure is different
+        h_env_full = trf_full.h
+        h_f0_full = None
+
+    h_env_only = trf_env_only.h  # Envelope kernel from envelope-only model
+    h_f0_only = trf_f0_only.h    # F0 kernel from F0-only model
+
+    # Get time axis (should be -0.2 to 0.5 seconds)
+    times = h_env_only.time.times if hasattr(h_env_only.time, 'times') else h_env_only.time
+
+    # Crop 50ms from each end to avoid edge artifacts
+    time_mask = (times >= -0.15) & (times <= 0.45)
+    times_cropped = times[time_mask]
+
+    # Align polarities before averaging to avoid cancellation
+    # For each kernel, flip sensors where peak is negative IN M100 WINDOW
+    def align_kernel_polarities(kernel_data, times, m100_window=(0.08, 0.15)):
+        """
+        Align sensor polarities by flipping those with negative peaks in M100 window.
+
+        Uses a principled window around the expected M100 auditory response (80-150ms)
+        rather than searching the entire time range, which avoids being influenced by
+        late artifacts or edge effects.
+
+        Parameters
+        ----------
+        kernel_data : eelbrain NDVar
+            Kernel with shape (n_sensors, n_times)
+        times : array
+            Time axis in seconds
+        m100_window : tuple
+            (start, end) time window in seconds for finding peak (default: 0.08-0.15s)
+        """
+        data = kernel_data.x.copy()
+        n_sensors = data.shape[0]
+
+        # Find indices for M100 window
+        m100_mask = (times >= m100_window[0]) & (times <= m100_window[1])
+
+        for i in range(n_sensors):
+            # Find peak only within M100 window
+            m100_data = data[i, m100_mask]
+            if len(m100_data) == 0:
+                continue  # Skip if window is empty
+
+            peak_idx_in_window = np.argmax(np.abs(m100_data))
+            peak_value = m100_data[peak_idx_in_window]
+
+            # If peak is negative, flip the entire sensor
+            if peak_value < 0:
+                data[i, :] *= -1
+
+        return np.mean(data, axis=0)  # Average across sensors
+
+    # Average across sensors with polarity alignment (using M100 window)
+    env_full_avg_aligned = align_kernel_polarities(h_env_full, times) if h_env_full is not None else None
+    env_only_avg_aligned = align_kernel_polarities(h_env_only, times)
+    f0_full_avg_aligned = align_kernel_polarities(h_f0_full, times) if h_f0_full is not None else None
+    f0_only_avg_aligned = align_kernel_polarities(h_f0_only, times)
+
+    # Compute RMS across sensors (at each timepoint)
+    def compute_rms_across_sensors(kernel_data):
+        """Compute RMS across sensors at each timepoint."""
+        # kernel_data.x shape: (n_sensors, n_times)
+        data = kernel_data.x
+        return np.sqrt(np.mean(data**2, axis=0))  # RMS across sensors
+
+    env_full_rms = compute_rms_across_sensors(h_env_full) if h_env_full is not None else None
+    env_only_rms = compute_rms_across_sensors(h_env_only)
+    f0_full_rms = compute_rms_across_sensors(h_f0_full) if h_f0_full is not None else None
+    f0_only_rms = compute_rms_across_sensors(h_f0_only)
+
+    # TOP ROW: Polarity-aligned averages
+    # Plot 1: Envelope kernels comparison (polarity-aligned average)
+    if env_full_avg_aligned is not None:
+        axes[0, 0].plot(times_cropped, env_full_avg_aligned[time_mask], linewidth=2, color='#2E86AB',
+                    label='Full Model', alpha=0.8)
+    axes[0, 0].plot(times_cropped, env_only_avg_aligned[time_mask], linewidth=2, color='#A23B72',
+                label='Envelope-only Model', alpha=0.8, linestyle='--')
+    axes[0, 0].axhline(0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
+    axes[0, 0].axvline(0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
+    axes[0, 0].set_ylabel('TRF Amplitude (aligned avg)', fontsize=10)
+    axes[0, 0].set_title('Envelope TRF (Polarity-Aligned)', fontsize=11, fontweight='bold')
+    axes[0, 0].legend(fontsize=8)
+    axes[0, 0].grid(True, alpha=0.3)
+
+    # Plot 2: F0 kernels comparison (polarity-aligned average)
+    if f0_full_avg_aligned is not None:
+        axes[0, 1].plot(times_cropped, f0_full_avg_aligned[time_mask], linewidth=2, color='#2E86AB',
+                    label='Full Model', alpha=0.8)
+    axes[0, 1].plot(times_cropped, f0_only_avg_aligned[time_mask], linewidth=2, color='#F18F01',
+                label='F0-only Model', alpha=0.8, linestyle='--')
+    axes[0, 1].axhline(0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
+    axes[0, 1].axvline(0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
+    axes[0, 1].set_ylabel('TRF Amplitude (aligned avg)', fontsize=10)
+    axes[0, 1].set_title('F0 TRF (Polarity-Aligned)', fontsize=11, fontweight='bold')
+    axes[0, 1].legend(fontsize=8)
+    axes[0, 1].grid(True, alpha=0.3)
+
+    # Plot 3: Both predictors from full model (polarity-aligned average)
+    if env_full_avg_aligned is not None and f0_full_avg_aligned is not None:
+        axes[0, 2].plot(times_cropped, env_full_avg_aligned[time_mask], linewidth=2, color='#A23B72',
+                    label='Envelope', alpha=0.8)
+        axes[0, 2].plot(times_cropped, f0_full_avg_aligned[time_mask], linewidth=2, color='#F18F01',
+                    label='F0', alpha=0.8)
+        axes[0, 2].axhline(0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
+        axes[0, 2].axvline(0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
+        axes[0, 2].set_ylabel('TRF Amplitude (aligned avg)', fontsize=10)
+        axes[0, 2].set_title('Full Model: Both Predictors (Aligned)', fontsize=11, fontweight='bold')
+        axes[0, 2].legend(fontsize=8)
+        axes[0, 2].grid(True, alpha=0.3)
+
+    # BOTTOM ROW: RMS across sensors
+    # Plot 4: Envelope RMS
+    if env_full_rms is not None:
+        axes[1, 0].plot(times_cropped, env_full_rms[time_mask], linewidth=2, color='#2E86AB',
+                    label='Full Model', alpha=0.8)
+    axes[1, 0].plot(times_cropped, env_only_rms[time_mask], linewidth=2, color='#A23B72',
+                label='Envelope-only Model', alpha=0.8, linestyle='--')
+    axes[1, 0].axvline(0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
+    axes[1, 0].set_xlabel('Time (s)', fontsize=10)
+    axes[1, 0].set_ylabel('RMS Amplitude (across sensors)', fontsize=10)
+    axes[1, 0].set_title('Envelope TRF (RMS)', fontsize=11, fontweight='bold')
+    axes[1, 0].legend(fontsize=8)
+    axes[1, 0].grid(True, alpha=0.3)
+
+    # Plot 5: F0 RMS
+    if f0_full_rms is not None:
+        axes[1, 1].plot(times_cropped, f0_full_rms[time_mask], linewidth=2, color='#2E86AB',
+                    label='Full Model', alpha=0.8)
+    axes[1, 1].plot(times_cropped, f0_only_rms[time_mask], linewidth=2, color='#F18F01',
+                label='F0-only Model', alpha=0.8, linestyle='--')
+    axes[1, 1].axvline(0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
+    axes[1, 1].set_xlabel('Time (s)', fontsize=10)
+    axes[1, 1].set_ylabel('RMS Amplitude (across sensors)', fontsize=10)
+    axes[1, 1].set_title('F0 TRF (RMS)', fontsize=11, fontweight='bold')
+    axes[1, 1].legend(fontsize=8)
+    axes[1, 1].grid(True, alpha=0.3)
+
+    # Plot 6: Both predictors RMS
+    if env_full_rms is not None and f0_full_rms is not None:
+        axes[1, 2].plot(times_cropped, env_full_rms[time_mask], linewidth=2, color='#A23B72',
+                    label='Envelope', alpha=0.8)
+        axes[1, 2].plot(times_cropped, f0_full_rms[time_mask], linewidth=2, color='#F18F01',
+                    label='F0', alpha=0.8)
+        axes[1, 2].axvline(0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
+        axes[1, 2].set_xlabel('Time (s)', fontsize=10)
+        axes[1, 2].set_ylabel('RMS Amplitude (across sensors)', fontsize=10)
+        axes[1, 2].set_title('Full Model: Both Predictors (RMS)', fontsize=11, fontweight='bold')
+        axes[1, 2].legend(fontsize=8)
+        axes[1, 2].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / 'trf_kernels.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"    ✓ Saved: trf_kernels.png")
+
+    # 5. Feature diagnostics
+    print("  5. Feature diagnostics...")
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # Envelope time series (first 30s)
+    end_idx = min(30000, len(envelope))
+    times_plot = np.arange(end_idx) / 1000.0
+    axes[0, 0].plot(times_plot, envelope[:end_idx], linewidth=0.5, color='#A23B72')
+    axes[0, 0].set_xlabel('Time (s)')
+    axes[0, 0].set_ylabel('Amplitude')
+    axes[0, 0].set_title('Acoustic Envelope (First 30s)')
+    axes[0, 0].grid(True, alpha=0.3)
+
+    # Envelope distribution
+    axes[0, 1].hist(envelope[envelope > 0], bins=100, edgecolor='black',
+                    alpha=0.7, color='#A23B72')
+    axes[0, 1].set_xlabel('Amplitude')
+    axes[0, 1].set_ylabel('Count')
+    axes[0, 1].set_title('Envelope Distribution')
+    axes[0, 1].set_yscale('log')
+    axes[0, 1].grid(True, alpha=0.3)
+
+    # F0 time series (first 30s)
+    axes[1, 0].plot(times_plot, f0[:end_idx], linewidth=0.5, color='#F18F01')
+    axes[1, 0].set_xlabel('Time (s)')
+    axes[1, 0].set_ylabel('Log F0')
+    axes[1, 0].set_title('F0 Contour (First 30s)')
+    axes[1, 0].grid(True, alpha=0.3)
+
+    # F0 distribution (voiced only)
+    f0_voiced = f0[f0 != 0]
+    if len(f0_voiced) > 0:
+        axes[1, 1].hist(f0_voiced, bins=100, edgecolor='black',
+                        alpha=0.7, color='#F18F01')
+        axes[1, 1].set_xlabel('Log F0')
+        axes[1, 1].set_ylabel('Count')
+        axes[1, 1].set_title('F0 Distribution (Voiced Segments)')
+        axes[1, 1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / 'feature_diagnostics.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"    ✓ Saved: feature_diagnostics.png")
+
+    # 6. Predicted vs Actual MEG Response
+    print("  6. Predicted vs actual response...")
+
+    # For visualization, select a representative sensor (the one with best correlation)
+    corr_values = trf_full.r.x if hasattr(trf_full.r, 'x') else np.array(trf_full.r)
+    best_sensor_idx = np.argmax(corr_values)
+
+    # Get sensor name
+    sensor_names = meg_ndvar.sensor.names if hasattr(meg_ndvar.sensor, 'names') else [f'Sensor {i}' for i in range(len(corr_values))]
+    best_sensor_name = sensor_names[best_sensor_idx]
+
+    # Extract predicted and actual data for best sensor
+    # Select a 30-second segment to visualize (not too long, not too short)
+    start_time = 60.0  # Start at 60s to avoid edge effects
+    end_time = 90.0    # Show 30 seconds
+
+    # Get time indices
+    times_full = meg_ndvar.time.times if hasattr(meg_ndvar.time, 'times') else np.arange(meg_ndvar.shape[1]) / 1000.0
+    time_mask = (times_full >= start_time) & (times_full <= end_time)
+    time_segment = times_full[time_mask]
+
+    # Get actual and predicted data
+    actual_data = meg_ndvar.x[best_sensor_idx, time_mask]
+
+    # Generate prediction using the TRF model
+    # We need to convolve the predictors with the TRF kernels
+    from scipy.signal import fftconvolve
+
+    # Get TRF kernels
+    if isinstance(trf_full.h, tuple):
+        h_env = trf_full.h[0].x[best_sensor_idx, :]
+        h_f0 = trf_full.h[1].x[best_sensor_idx, :]
+    else:
+        h_env = trf_full.h.x[best_sensor_idx, :]
+        h_f0 = None
+
+    # Get predictor time series
+    env_segment = envelope[time_mask]
+    f0_segment = f0[time_mask]
+
+    # Convolve predictors with kernels to get prediction
+    # This is a simplified prediction for visualization
+    # The actual eelbrain prediction is more sophisticated
+    pred_env = np.convolve(env_segment, h_env[::-1], mode='same')
+    if h_f0 is not None:
+        pred_f0 = np.convolve(f0_segment, h_f0[::-1], mode='same')
+        predicted_data = pred_env + pred_f0
+    else:
+        predicted_data = pred_env
+
+    # Normalize for better visualization
+    actual_data = (actual_data - actual_data.mean()) / actual_data.std()
+    predicted_data = (predicted_data - predicted_data.mean()) / predicted_data.std()
+
+    # Create figure with 3 panels
+    fig, axes = plt.subplots(3, 1, figsize=(14, 10))
+
+    # Panel 1: Actual vs Predicted (overlaid)
+    axes[0].plot(time_segment, actual_data, linewidth=0.5, color='#2E86AB',
+                label='Actual MEG', alpha=0.7)
+    axes[0].plot(time_segment, predicted_data, linewidth=0.5, color='#E63946',
+                label='TRF Prediction', alpha=0.7)
+    axes[0].set_xlabel('Time (s)', fontsize=11)
+    axes[0].set_ylabel('Normalized Amplitude', fontsize=11)
+    axes[0].set_title(f'Predicted vs Actual Response - {best_sensor_name} (r={corr_values[best_sensor_idx]:.3f})',
+                     fontsize=12, fontweight='bold')
+    axes[0].legend(fontsize=10, loc='upper right')
+    axes[0].grid(True, alpha=0.3)
+
+    # Panel 2: Actual MEG only (zoomed segment)
+    zoom_start = start_time + 5
+    zoom_end = zoom_start + 5  # 5-second zoom
+    zoom_mask = (time_segment >= zoom_start) & (time_segment <= zoom_end)
+
+    axes[1].plot(time_segment[zoom_mask], actual_data[zoom_mask],
+                linewidth=1.5, color='#2E86AB', label='Actual MEG')
+    axes[1].plot(time_segment[zoom_mask], predicted_data[zoom_mask],
+                linewidth=1.5, color='#E63946', label='TRF Prediction', linestyle='--')
+    axes[1].set_xlabel('Time (s)', fontsize=11)
+    axes[1].set_ylabel('Normalized Amplitude', fontsize=11)
+    axes[1].set_title('Zoomed View (5 seconds)', fontsize=12, fontweight='bold')
+    axes[1].legend(fontsize=10)
+    axes[1].grid(True, alpha=0.3)
+
+    # Panel 3: Residual (prediction error)
+    residual = actual_data - predicted_data
+    axes[2].plot(time_segment, residual, linewidth=0.5, color='#F18F01', alpha=0.7)
+    axes[2].axhline(0, color='k', linestyle='--', linewidth=1, alpha=0.5)
+    axes[2].set_xlabel('Time (s)', fontsize=11)
+    axes[2].set_ylabel('Residual', fontsize=11)
+    axes[2].set_title('Prediction Error (Actual - Predicted)', fontsize=12, fontweight='bold')
+    axes[2].grid(True, alpha=0.3)
+
+    # Add stats text
+    correlation = np.corrcoef(actual_data, predicted_data)[0, 1]
+    rmse = np.sqrt(np.mean(residual**2))
+    stats_text = f'Correlation: {correlation:.3f}\nRMSE: {rmse:.3f}'
+    axes[2].text(0.98, 0.97, stats_text, transform=axes[2].transAxes,
+                fontsize=10, verticalalignment='top', horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    plt.tight_layout()
+    plt.savefig(output_dir / 'predicted_vs_actual.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"    ✓ Saved: predicted_vs_actual.png")
+
+    print(f"\n✓ All visualizations saved to: {output_dir}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Multi-predictor TRF analysis")
+    parser.add_argument('--subject', type=str, default='sub-01', help='Subject ID')
+    parser.add_argument('--runs', type=int, nargs='+', default=[1, 3, 5], help='Run numbers to combine')
+    parser.add_argument('--meg-files', type=str, nargs='+', required=True, help='MEG files for each run')
+    parser.add_argument('--sensor-type', type=str, default='mag', choices=['mag', 'grad', 'eeg'],
+                       help='Sensor type')
+    parser.add_argument('--listener-only', action='store_true',
+                       help='Only analyze periods when participant is listening (mask out speaking periods)')
+    parser.add_argument('--roi-sensors', type=str, default=None,
+                       help='Path to ROI sensors JSON file (from BADA localizer)')
+    parser.add_argument('--base-dir', type=Path, default=None, help='Base directory')
+
+    args = parser.parse_args()
+
+    if len(args.meg_files) != len(args.runs):
+        raise ValueError("Number of MEG files must match number of runs")
+
+    base_dir = args.base_dir or Path(__file__).parent.parent
+
+    print("="*70)
+    print("MULTI-PREDICTOR TRF ANALYSIS")
+    print("="*70)
+    print(f"\nSubject: {args.subject}")
+    print(f"Runs: {args.runs}")
+    print(f"Sensor type: {args.sensor_type}")
+    if args.listener_only:
+        print(f"Mode: LISTENER-ONLY (masking out participant-speaking periods)")
+    else:
+        print(f"Mode: Full recording (no masking)")
+    print(f"\nPredictors:")
+    print(f"  1. Acoustic envelope (RMS)")
+    print(f"  2. F0 (fundamental frequency/pitch)")
+
+    # Load and process each run
+    run_data_list = []
+    for run, meg_file in zip(args.runs, args.meg_files):
+        meg_data, envelope, f0, times, info, picks, mask = load_and_process_run(
+            args.subject, run, meg_file, args.sensor_type, base_dir, args.listener_only, args.roi_sensors
+        )
+        run_data_list.append({
+            'meg': meg_data,
+            'envelope': envelope,
+            'f0': f0,
+            'times': times,
+            'info': info,
+            'picks': picks,
+            'mask': mask
+        })
+
+    # Combine runs
+    meg_combined, envelope_combined, f0_combined, times_combined, mask_combined = combine_runs(run_data_list)
+
+    # Create sensor dimension
+    print("\nCreating sensor dimension...")
+    ch_info = mne.pick_info(run_data_list[0]['info'], run_data_list[0]['picks'])
+    try:
+        sensor_dim = eelbrain.load.mne.sensor_dim(ch_info)
+        print("  Using eelbrain sensor dimension")
+    except (AttributeError, TypeError):
+        sensor_dim = eelbrain.Case
+        print("  Using Case dimension (fallback)")
+
+    # Fit multi-predictor TRF model
+    results, meg_ndvar = fit_multipredictor_trf(
+        meg_combined, envelope_combined, f0_combined, times_combined, sensor_dim
+    )
+
+    # Save results
+    output_dir = base_dir / "outputs" / "trf_multipredictor" / args.subject / \
+                 f"runs-{'_'.join(map(str, args.runs))}" / args.sensor_type
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{'='*70}")
+    print("SAVING RESULTS")
+    print(f"{'='*70}\n")
+
+    # Save TRF models
+    with open(output_dir / 'trf_models.pkl', 'wb') as f:
+        pickle.dump(results, f)
+    print(f"✓ Saved: {output_dir / 'trf_models.pkl'}")
+
+    # Save features
+    np.save(output_dir / 'envelope_combined.npy', envelope_combined)
+    np.save(output_dir / 'f0_combined.npy', f0_combined)
+    print(f"✓ Saved: features")
+
+    # Save summary
+    summary = {
+        'subject': args.subject,
+        'runs': args.runs,
+        'sensor_type': args.sensor_type,
+        'predictors': ['envelope', 'f0'],
+        'n_sensors': meg_combined.shape[0],
+        'total_duration_s': times_combined[-1],
+        'model_correlations': results['correlations'],
+        'predictor_contributions': results['contributions'],
+        'n_runs_combined': len(args.runs)
+    }
+
+    with open(output_dir / 'summary.json', 'w') as f:
+        json.dump(summary, f, indent=2)
+    print(f"✓ Saved: {output_dir / 'summary.json'}")
+
+    # Create visualizations
+    create_visualizations(results, meg_ndvar, envelope_combined, f0_combined, output_dir)
+
+    print(f"\n{'='*70}")
+    print("MULTI-PREDICTOR TRF COMPLETE!")
+    print(f"{'='*70}\n")
+
+    print(f"Results: {output_dir}\n")
+
+    print("Model performance:")
+    print(f"  Full model:      {summary['model_correlations']['full']:.4f}")
+    print(f"  Envelope only:   {summary['model_correlations']['envelope_only']:.4f}")
+    print(f"  F0 only:         {summary['model_correlations']['f0_only']:.4f}")
+
+    print(f"\nPredictor contributions:")
+    print(f"  Envelope: {summary['predictor_contributions']['envelope']:.4f}")
+    print(f"  F0:       {summary['predictor_contributions']['f0']:.4f}")
+
+    if summary['model_correlations']['full'] > 0.020:
+        print(f"\n✅ SUCCESS! Multi-predictor model shows strong signal!")
+    else:
+        print(f"\n⚠ Moderate correlation - results may still be meaningful.")
+
+    print(f"\n✓ Analysis complete!")
+
+
+if __name__ == "__main__":
+    main()

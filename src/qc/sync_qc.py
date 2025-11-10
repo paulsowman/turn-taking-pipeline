@@ -1,0 +1,376 @@
+"""
+Quality control for audio-MEG synchronization.
+
+Generates diagnostic plots and reports to verify sync accuracy.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend
+from pathlib import Path
+from typing import Dict, Optional
+from scipy import signal
+
+from utils.logging_setup import get_logger
+
+logger = get_logger(__name__)
+
+
+def plot_sync_diagnostics(
+    meg_audio: np.ndarray,
+    ext_audio: np.ndarray,
+    meg_env: np.ndarray,
+    ext_env: np.ndarray,
+    sync_params: Dict,
+    output_dir: Path,
+    meg_sfreq: float,
+    ext_sfreq: float,
+) -> None:
+    """
+    Generate comprehensive synchronization diagnostic plots.
+
+    Parameters
+    ----------
+    meg_audio : np.ndarray
+        MEG auxiliary audio signal.
+    ext_audio : np.ndarray
+        External audio signal (at original sampling rate).
+    meg_env : np.ndarray
+        MEG envelope (preprocessed).
+    ext_env : np.ndarray
+        External envelope (resampled to MEG rate).
+    sync_params : dict
+        Synchronization parameters.
+    output_dir : Path
+        Output directory for plots.
+    meg_sfreq : float
+        MEG sampling frequency.
+    ext_sfreq : float
+        External audio sampling frequency.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Generating synchronization diagnostic plots...")
+
+    # 1. Envelope alignment plot
+    _plot_envelope_alignment(
+        meg_env, ext_env, sync_params, meg_sfreq, output_dir
+    )
+
+    # 2. Drift correction plot
+    _plot_drift_correction(sync_params, output_dir)
+
+    # 3. Waveform alignment (zoomed)
+    _plot_waveform_alignment(
+        meg_audio, ext_audio, sync_params, meg_sfreq, ext_sfreq, output_dir
+    )
+
+    logger.info(f"Diagnostic plots saved to: {output_dir}")
+
+
+def _plot_envelope_alignment(
+    meg_env: np.ndarray,
+    ext_env: np.ndarray,
+    sync_params: Dict,
+    sfreq: float,
+    output_dir: Path,
+) -> None:
+    """Plot aligned envelopes."""
+    fig, axes = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+
+    # Time axes
+    # Note: meg_env is at MEG sfreq, ext_env is at external sfreq
+    meg_sfreq = sync_params["meg_sfreq"]
+    ext_sfreq = sync_params["ext_sfreq"]
+
+    meg_time = np.arange(len(meg_env)) / meg_sfreq
+    ext_time = np.arange(len(ext_env)) / ext_sfreq
+
+    # Apply offset to external envelope
+    # NOTE: The sync function has reversed sign convention!
+    # It reports negative offsets when external starts AFTER MEG
+    # So we need to SUBTRACT the offset to correct for this
+    offset_s = sync_params["initial_offset_s"]
+    ext_time_aligned = ext_time - offset_s  # Subtract to reverse incorrect sign from sync
+
+    # Downsample/smooth envelopes for visualization
+    from scipy.ndimage import gaussian_filter1d
+    sigma_meg = int(0.01 * meg_sfreq)  # 10ms smoothing
+    sigma_ext = int(0.01 * ext_sfreq)  # 10ms smoothing
+    meg_env_smooth = gaussian_filter1d(meg_env, sigma=sigma_meg)
+    ext_env_smooth = gaussian_filter1d(ext_env, sigma=sigma_ext)
+
+    # Plot first 60 seconds
+    plot_duration = min(60, meg_time[-1])
+    if len(ext_time_aligned) > 0:
+        plot_duration = min(plot_duration, ext_time_aligned[-1])
+
+    meg_mask = meg_time <= plot_duration
+    ext_mask = ext_time_aligned <= plot_duration
+
+    # Check if we have valid data to plot
+    if not np.any(meg_mask) or not np.any(ext_mask):
+        logger.warning("No overlapping data in plot window, skipping envelope alignment plot")
+        return
+
+    # Scale external envelope to match MEG amplitude range for visualization
+    meg_max = np.max(meg_env_smooth[meg_mask])
+    ext_max = np.max(ext_env_smooth[ext_mask])
+
+    if ext_max > 0 and meg_max > 0:
+        ext_env_scaled = ext_env_smooth * (meg_max / ext_max)
+    else:
+        ext_env_scaled = ext_env_smooth
+
+    # Top: overlaid envelopes
+    axes[0].plot(meg_time[meg_mask], meg_env_smooth[meg_mask],
+                 label="MEG Aux Envelope", alpha=0.7, linewidth=1, color='black')
+    axes[0].plot(ext_time_aligned[ext_mask], ext_env_scaled[ext_mask],
+                 label="External Envelope (aligned, scaled)", alpha=0.6, linewidth=1, color='blue')
+    axes[0].set_ylabel("Amplitude Envelope")
+    axes[0].set_title(f"Envelope Alignment After Synchronization (offset = {offset_s:+.3f}s)")
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
+
+    # Bottom: difference
+    # Interpolate to common time base for difference
+    from scipy.interpolate import interp1d
+    if len(ext_time_aligned[ext_mask]) > 1 and len(ext_env_scaled[ext_mask]) > 1:
+        f_ext = interp1d(ext_time_aligned[ext_mask], ext_env_scaled[ext_mask],
+                        kind='linear', bounds_error=False, fill_value=0)
+        ext_env_interp = f_ext(meg_time[meg_mask])
+        diff = meg_env_smooth[meg_mask] - ext_env_interp
+        axes[1].plot(meg_time[meg_mask], diff, color='red', alpha=0.6, linewidth=0.5)
+        axes[1].axhline(0, color='black', linestyle='--', linewidth=0.5)
+        axes[1].set_ylabel("Difference (MEG - Ext)")
+        axes[1].set_xlabel("Time (s)")
+        axes[1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "envelope_alignment.png", dpi=150, bbox_inches='tight')
+    plt.close()
+
+
+def _plot_drift_correction(
+    sync_params: Dict,
+    output_dir: Path,
+) -> None:
+    """Plot drift correction over time."""
+    window_stats = sync_params.get("window_stats", [])
+    if not window_stats:
+        logger.warning("No window stats available, skipping drift plot")
+        return
+
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+
+    times = [w["center_time_s"] for w in window_stats]
+    offsets = [w["offset_s"] for w in window_stats]
+    xcorr_peaks = [w["xcorr_peak"] for w in window_stats]
+    errors_ms = [w["alignment_error_ms"] for w in window_stats]
+
+    # Fitted drift model
+    coeffs = sync_params["drift_coefficients"]
+    time_fit = np.linspace(0, max(times), 100)
+    offset_fit = coeffs["a"] * time_fit + coeffs["b"]
+
+    # Top: offset over time
+    axes[0].scatter(times, offsets, alpha=0.6, s=30, label="Window estimates")
+    axes[0].plot(time_fit, offset_fit, 'r-', linewidth=2, label="Fitted drift model")
+    axes[0].axhline(sync_params["initial_offset_s"], color='green', linestyle='--',
+                    linewidth=1, label="Initial offset")
+    axes[0].set_ylabel("Offset (s)")
+    axes[0].set_title("Time Drift Correction")
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
+
+    # Middle: cross-correlation peak
+    axes[1].plot(times, xcorr_peaks, 'o-', alpha=0.6, markersize=4)
+    axes[1].set_ylabel("XCorr Peak")
+    axes[1].set_title("Cross-Correlation Quality per Window")
+    axes[1].grid(True, alpha=0.3)
+
+    # Bottom: alignment error
+    axes[2].plot(times, errors_ms, 'o-', color='red', alpha=0.6, markersize=4)
+    axes[2].axhline(10, color='green', linestyle='--', linewidth=1, label="Target: 10 ms")
+    axes[2].set_ylabel("Alignment Error (ms)")
+    axes[2].set_xlabel("Time (s)")
+    axes[2].set_title("Alignment Error Over Time")
+    axes[2].legend()
+    axes[2].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_dir / "drift_correction.png", dpi=150, bbox_inches='tight')
+    plt.close()
+
+
+def _plot_waveform_alignment(
+    meg_audio: np.ndarray,
+    ext_audio: np.ndarray,
+    sync_params: Dict,
+    meg_sfreq: float,
+    ext_sfreq: float,
+    output_dir: Path,
+) -> None:
+    """Plot zoomed waveform alignment at a few time points."""
+    fig, axes = plt.subplots(3, 1, figsize=(14, 9))
+
+    offset_s = sync_params["initial_offset_s"]
+
+    # Three time points: start, middle, end
+    meg_duration = len(meg_audio) / meg_sfreq
+    ext_duration = len(ext_audio) / ext_sfreq
+
+    # Convert external duration to MEG timebase
+    # NOTE: reversing sign since sync has it backwards
+    # When sync reports -12.235s, external actually starts 12.235s AFTER MEG
+    # So we need to negate the offset
+    ext_start_meg = -offset_s  # When external audio starts in MEG time (negated for reversed sign)
+    ext_end_meg = ext_duration + (-offset_s)  # When external audio ends in MEG time
+
+    # Find valid time points where both signals overlap
+    valid_start = max(0, ext_start_meg)  # Can't be before MEG start
+    valid_end = min(meg_duration, ext_end_meg)  # Can't be after MEG or external end
+
+    if valid_end - valid_start < 2:  # Need at least 2 seconds of overlap
+        logger.warning(f"Insufficient overlap for waveform plot: {valid_end - valid_start:.1f}s")
+        return
+
+    # Choose time points within valid range
+    time_points = [
+        valid_start + 5,  # 5s from start of overlap
+        (valid_start + valid_end) / 2,  # middle
+        valid_end - 5,  # 5s before end of overlap
+    ]
+
+    for i, center_time in enumerate(time_points):
+        if center_time < 0 or center_time > meg_duration:
+            continue
+
+        # 2-second window around time point
+        window_dur = 2.0
+        meg_start = int(max(0, (center_time - window_dur/2) * meg_sfreq))
+        meg_end = int(min(len(meg_audio), (center_time + window_dur/2) * meg_sfreq))
+
+        # External audio time in external timebase
+        # NOTE: sync function has reversed sign, so we reverse it in envelope plot
+        # meg_time = ext_time - offset (from envelope alignment formula)
+        # So: ext_time = meg_time + offset
+        ext_center = center_time + offset_s
+        ext_start = int(max(0, (ext_center - window_dur/2) * ext_sfreq))
+        ext_end = int(min(len(ext_audio), (ext_center + window_dur/2) * ext_sfreq))
+
+        meg_window = meg_audio[meg_start:meg_end]
+        ext_window = ext_audio[ext_start:ext_end]
+
+        # Skip if either window is empty
+        if len(meg_window) == 0 or len(ext_window) == 0:
+            continue
+
+        # Time axes (both in MEG timebase)
+        meg_t = np.arange(len(meg_window)) / meg_sfreq + (meg_start / meg_sfreq)
+        ext_t = np.arange(len(ext_window)) / ext_sfreq + (ext_start / ext_sfreq) - offset_s
+
+        # Normalize for display
+        meg_max = np.max(np.abs(meg_window))
+        ext_max = np.max(np.abs(ext_window))
+
+        if meg_max > 0 and ext_max > 0:
+            meg_norm = meg_window / meg_max
+            ext_norm = ext_window / ext_max
+
+            axes[i].plot(meg_t, meg_norm, label="MEG", alpha=0.7, linewidth=0.8)
+            axes[i].plot(ext_t, ext_norm, label="External (aligned)", alpha=0.7, linewidth=0.8)
+            axes[i].set_ylabel("Amplitude (norm)")
+            axes[i].set_title(f"Waveform Alignment at t = {center_time:.1f} s (MEG timebase)")
+            axes[i].legend()
+            axes[i].grid(True, alpha=0.3)
+
+    axes[-1].set_xlabel("Time (s)")
+    plt.tight_layout()
+    plt.savefig(output_dir / "waveform_alignment.png", dpi=150, bbox_inches='tight')
+    plt.close()
+
+
+def generate_sync_report(
+    sync_params: Dict,
+    output_path: Path,
+) -> None:
+    """
+    Generate text report of synchronization QC.
+
+    Parameters
+    ----------
+    sync_params : dict
+        Synchronization parameters.
+    output_path : Path
+        Output file path for report.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    qc = sync_params["qc_metrics"]
+
+    with open(output_path, "w") as f:
+        f.write("=" * 70 + "\n")
+        f.write("AUDIO-MEG SYNCHRONIZATION QUALITY CONTROL REPORT\n")
+        f.write("=" * 70 + "\n\n")
+
+        # Basic info
+        f.write("RECORDING INFORMATION\n")
+        f.write("-" * 70 + "\n")
+        f.write(f"MEG duration:      {sync_params['meg_duration_s']:.2f} seconds\n")
+        f.write(f"External duration: {sync_params['ext_duration_s']:.2f} seconds\n")
+        f.write(f"MEG sampling rate: {sync_params['meg_sfreq']:.1f} Hz\n")
+        f.write(f"Ext sampling rate: {sync_params['ext_sfreq']:.1f} Hz\n")
+        f.write(f"Aux channel:       {sync_params['aux_channel']}\n\n")
+
+        # Synchronization results
+        f.write("SYNCHRONIZATION RESULTS\n")
+        f.write("-" * 70 + "\n")
+        f.write(f"Initial offset:    {sync_params['initial_offset_s']:.4f} seconds\n")
+        f.write(f"Drift model:       {sync_params['drift_model']}\n")
+
+        coeffs = sync_params['drift_coefficients']
+        f.write(f"Drift equation:    offset(t) = {coeffs['a']:.6e} * t + {coeffs['b']:.4f}\n")
+        f.write(f"Drift rate:        {qc['drift_rate_ppm']:.2f} ppm\n\n")
+
+        # Quality metrics
+        f.write("QUALITY METRICS\n")
+        f.write("-" * 70 + "\n")
+        f.write(f"Median alignment error: {qc['median_error_ms']:.2f} ms\n")
+        f.write(f"Max alignment error:    {qc['max_error_ms']:.2f} ms\n")
+        f.write(f"Number of windows:      {qc['n_windows']}\n")
+        f.write(f"Sync quality:           {qc['sync_quality'].upper()}\n\n")
+
+        # Pass/fail criteria
+        f.write("PASS/FAIL CRITERIA\n")
+        f.write("-" * 70 + "\n")
+        target = 10.0
+        max_acceptable = 50.0
+
+        if qc['median_error_ms'] < target:
+            f.write(f"✓ EXCELLENT: Median error < {target} ms\n")
+        elif qc['median_error_ms'] < max_acceptable:
+            f.write(f"✓ PASS: Median error < {max_acceptable} ms\n")
+        else:
+            f.write(f"✗ FAIL: Median error > {max_acceptable} ms\n")
+            f.write("  ACTION REQUIRED: Check audio files and sync settings\n")
+
+        f.write("\n")
+
+        # Window details
+        if qc['n_windows'] > 0:
+            f.write("WINDOW-BY-WINDOW DETAILS\n")
+            f.write("-" * 70 + "\n")
+            f.write(f"{'Window':<8} {'Time (s)':<12} {'Offset (s)':<12} {'Error (ms)':<12} {'XCorr':<8}\n")
+            f.write("-" * 70 + "\n")
+
+            for i, w in enumerate(sync_params.get('window_stats', [])):
+                f.write(f"{i+1:<8} {w['center_time_s']:<12.1f} {w['offset_s']:<12.4f} "
+                       f"{w['alignment_error_ms']:<12.2f} {w['xcorr_peak']:<8.3f}\n")
+
+        f.write("\n" + "=" * 70 + "\n")
+
+    logger.info(f"QC report saved to: {output_path}")

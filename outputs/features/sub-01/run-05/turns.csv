@@ -1,0 +1,81 @@
+turn_id,start,end,duration,text,n_segments,n_words,segment_ids
+0,1.9399999999999995,4.5,2.5600000000000005,"Okay, so you're in your first year?",1,7,[np.int64(0)]
+1,5.76,7.78,2.0200000000000005,How has it been so far?,1,6,[np.int64(2)]
+2,9.239999999999998,10.48,1.240000000000002,"Good, mostly.",1,2,[np.int64(3)]
+3,11.92,15.26,3.34,"But a few assessments, they're going to be on time.",1,10,[np.int64(4)]
+4,15.62,16.16,0.5400000000000009,I think it's in time.,1,5,[np.int64(5)]
+5,17.24,21.04,3.8000000000000007,"Have you got two, do you have two weeks to set up?",1,12,[np.int64(6)]
+6,22.28,23.38,1.0999999999999979,"Yeah, two weeks to start.",1,5,[np.int64(8)]
+7,23.62,25.28,1.6600000000000001,"But you know, two weeks is a long time.",1,9,[np.int64(9)]
+8,25.62,26.64,1.0199999999999996,Two weeks is a long time.,1,6,[np.int64(10)]
+9,32.64000000000001,38.14,5.499999999999993,"I like to sit down, do it, but I don't know what to do. Yeah, what's the topic?",2,18,"[np.int64(12), np.int64(13)]"
+10,38.54,46.68,8.14,"It's like a sense of smell, effect, people, like social, psychological, physical, and physical. Okay.",2,15,"[np.int64(14), np.int64(15)]"
+11,48.1,49.64,1.5399999999999991,"And it's like, I don't know.",1,6,[np.int64(16)]
+12,50.56,52.98,2.4199999999999946,And I've done a bunch of Williams and I hate reading.,1,11,[np.int64(17)]
+13,54.080000000000005,55.24,1.1599999999999966,I've served on a reading.,1,5,[np.int64(19)]
+14,55.62,57.36,1.740000000000002,"Or myself, definitely, just kind of given up.",1,8,[np.int64(20)]
+15,57.6,58.5,0.8999999999999986,"Yeah, yeah.",1,2,[np.int64(21)]
+16,58.76,70.78,12.020000000000003,"I think I really did readings when I didn't understand it. But if I thought that I really got it down, I was also like always behind, so never really did it.",3,32,"[np.int64(22), np.int64(23), np.int64(24)]"
+17,71.04,73.08,2.039999999999992,"But you know, try to do them if you can.",1,10,[np.int64(25)]
+18,74.54,77.12,2.5799999999999983,But so it's just an essay. It's not like a report.,2,11,"[np.int64(26), np.int64(27)]"
+19,79.22,90.62,11.400000000000006,"Okay. But that's an interesting one because you know, like when you smell something and it triggers your memory and then you get, you try to feel happy about it or sad about it.",3,34,"[np.int64(28), np.int64(29), np.int64(30)]"
+20,91.5,93.46,1.9599999999999937,That's what I was like reading.,1,6,[np.int64(31)]
+21,95.9,97.54,1.6400000000000006,"I was like, I'm just gonna do a good reading.",1,10,[np.int64(33)]
+22,98.44,101.78,3.3400000000000034,I'm gonna say I get the reading is done the next two days and then I'll start.,1,17,[np.int64(34)]
+23,103.46,118.6,15.14,Yeah.  That's actually a good tactic because I did. I would do it simultaneously and the times I would do it simultaneously was my worst and it took me so long because I would forget where I got a certain information from.,5,42,"[np.int64(36), np.int64(37), np.int64(38), np.int64(39), np.int64(40)]"
+24,118.94,124.4,5.460000000000008,"But if you did the readings and took notes on where it came from, then you can backtrace it.",2,19,"[np.int64(41), np.int64(42)]"
+25,125.56,126.64,1.0799999999999983,But you've got this.,1,4,[np.int64(43)]
+26,129.04,136.6,7.560000000000002,So how are you finding like social wise to have high school friends that came here? Yeah.,2,17,"[np.int64(45), np.int64(46)]"
+27,136.8,140.54,3.7399999999999807,"Like, I was in my high school and I'd be there to see it.",1,14,[np.int64(47)]
+28,140.94,142.06,1.1200000000000045,We do different things.,1,4,[np.int64(48)]
+29,142.34,152.0,9.659999999999997,"Like I was just saying, you know, some of our friends that we knew was like the same, like different school, the old friends there, you know, we met a company friend.",2,32,"[np.int64(49), np.int64(50)]"
+30,152.28,153.98,1.6999999999999886,"It's like, it's been good.",1,5,[np.int64(51)]
+31,155.08,159.88,4.799999999999983,"I don't really like, I like, you know, two, maybe three or five close friends.",1,15,[np.int64(53)]
+32,160.2,163.16,2.960000000000008,I don't know. I was just there wearing a vest.,2,10,"[np.int64(54), np.int64(55)]"
+33,163.9,166.34,2.4399999999999977,I was just trying to kill them with high school friends.,1,11,[np.int64(56)]
+34,168.1,172.1,4.0,And I think it's always intimidating because at uni you don't see them all the time.,1,16,[np.int64(59)]
+35,172.78,176.18,3.4000000000000057,And so it's even harder to make like new friends.,1,10,[np.int64(60)]
+36,176.74,179.96,3.219999999999999,Yeah. It's like something like this. It's like the ones that you see like once a week.,3,17,"[np.int64(61), np.int64(62), np.int64(63)]"
+37,180.46,181.3,0.8400000000000034,It's just that.,1,3,[np.int64(64)]
+38,183.0,191.08,8.080000000000013,"And not everyone is, I don't know, not everyone's like, I feel like a lot of the time I've like talked to people first.",2,24,"[np.int64(67), np.int64(68)]"
+39,191.56,198.84,7.280000000000001,"If we end up like really good friends, but I'm like, so you would have never spoken to me first. You know, before we're like outgoing.",2,26,"[np.int64(69), np.int64(70)]"
+40,200.28000000000003,202.54,2.2599999999999625,"It's the headphones and instead, I'd say.",1,7,[np.int64(72)]
+41,203.94,209.32,5.3799999999999955,"But surely everyone, I think you just need like an opportunity, but it's hard.",1,14,[np.int64(75)]
+42,211.60000000000002,213.44,1.839999999999975,But have you joined any societies?,1,6,[np.int64(76)]
+43,214.36,215.62,1.259999999999991,I joined a Greek society.,1,5,[np.int64(77)]
+44,215.9,217.8,1.9000000000000057,"Oh yeah, I'm part of that too. I'm part of it too.",2,12,"[np.int64(78), np.int64(79)]"
+45,218.58,222.98,4.399999999999977,"You go, my friends just said, oh, it's just a massive party or a year-round. Yeah.",2,17,"[np.int64(80), np.int64(81)]"
+46,223.42,225.68,2.2600000000000193,"And it was like a free sign, not a lot of people.",1,12,[np.int64(82)]
+47,226.08,230.12,4.039999999999992,"Like the guys that like get a pen of your friends, we let you sign up for free. Oh, I get it.",2,22,"[np.int64(83), np.int64(84)]"
+48,230.58,232.04,1.4599999999999795,"So my friends like, when are the 10 people?",1,9,[np.int64(85)]
+49,232.3,234.68,2.3799999999999955,"Oh my god. It's for my name. No, oh yeah. Cool.",4,11,"[np.int64(86), np.int64(87), np.int64(88), np.int64(89)]"
+50,235.82,236.44,0.6200000000000045,That is good.,1,3,[np.int64(91)]
+51,238.53999999999996,249.52,10.980000000000047,"But I think it's really just like being part of society, you just meet so many people. So that's probably really good for like your uni experience.",2,27,"[np.int64(92), np.int64(93)]"
+52,251.08,251.64,0.5599999999999739,Yeah.,1,1,[np.int64(94)]
+53,253.6,259.26,5.659999999999997,It's nice having people from your degree who knows like the same pain that you're going through.,1,17,[np.int64(95)]
+54,264.76,265.32,0.5600000000000023,Yeah.,1,1,[np.int64(96)]
+55,265.94,268.82,2.8799999999999955,So do you attend lectures in person?,1,7,[np.int64(97)]
+56,270.32,272.64,2.319999999999993,"There's like two of them, but I just don't mind.",1,10,[np.int64(99)]
+57,275.12,278.08,2.9599999999999795,"Yeah, I think it's a long, I think a long person.",1,11,[np.int64(100)]
+58,279.1,282.44,3.339999999999975,"It's like a two hour long, like a counting one. Let's do it. I like it.",3,16,"[np.int64(101), np.int64(102), np.int64(103)]"
+59,282.68,283.82,1.1399999999999864,Okay. Yeah. That is good.,3,5,"[np.int64(104), np.int64(105), np.int64(106)]"
+60,284.88,292.3,7.420000000000016,"How did you know you wanted, like how did you know that's what you wanted to do with your degree, like picking it?",2,23,"[np.int64(107), np.int64(108)]"
+61,292.7,302.48,9.78000000000003,"Like, I was like chasing out the concept before you. I was like, well, you know, I was looking at it with an eye. I know like, how it looks like up like in high school, in business studies.",3,39,"[np.int64(109), np.int64(110), np.int64(111)]"
+62,302.72,303.58,0.8599999999999568,And then you really like it.,1,6,[np.int64(112)]
+63,303.92,307.5,3.579999999999984,"And I wanted to finance like, well, this is easy. A lot for this.",2,14,"[np.int64(113), np.int64(114)]"
+64,308.28,312.78,4.5,"I like all the elements for the counts and the, you know, something that I was really worth. And I quite like it.",2,23,"[np.int64(116), np.int64(117)]"
+65,313.6,314.96,1.3599999999999568,It's definitely getting a bit harder.,1,6,[np.int64(119)]
+66,315.18,317.14,1.9599999999999795,But it's still like enjoyable.,1,5,[np.int64(120)]
+67,318.22,319.34,1.1199999999999477,Is it a lot of math?,1,6,[np.int64(122)]
+68,319.98,325.92,5.939999999999998,"Like, let's all get a map, but it's not really what I was trying to say. It's like dividing, like, and then it's kind of like a cost.",2,28,"[np.int64(123), np.int64(124)]"
+69,328.02,328.96,0.9399999999999977,It's a bit of a piece. Alright.,2,7,"[np.int64(127), np.int64(128)]"
+70,329.34,331.72,2.3800000000000523,"It's like calculation, but not math.",1,6,[np.int64(129)]
+71,331.94,337.86,5.920000000000016,"Yeah. It's like you get to like, express balance, like the balance sheet. Yeah.",3,14,"[np.int64(130), np.int64(131), np.int64(132)]"
+72,338.28,339.72,1.4400000000000546,I don't really get how everything is going.,1,8,[np.int64(133)]
+73,340.3,342.92,2.6200000000000045,I don't think you're going to have it.,1,8,[np.int64(134)]
+74,343.98,346.7,2.7199999999999704,"You'll, I'm sure they'll teach you.",1,6,[np.int64(137)]
+75,346.96,348.18,1.2200000000000273,"Or, of course, you do.",1,5,[np.int64(138)]
+76,349.18,350.22,1.0400000000000205,I'm doing psychology.,1,3,[np.int64(139)]
+77,351.02,353.74,2.7200000000000273,So that's just my main degree.,1,6,[np.int64(140)]
+78,354.44,357.78,3.339999999999975,"But I'm in my like fourth year, so I've been here a while.",1,13,[np.int64(141)]
+79,359.86,360.6,0.7400000000000091,But eight.,1,2,[np.int64(142)]

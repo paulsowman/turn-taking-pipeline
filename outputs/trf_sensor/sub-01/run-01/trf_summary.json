@@ -1,0 +1,18 @@
+{
+  "subject": "sub-01",
+  "run": 1,
+  "sensor_type": "mag",
+  "n_sensors": 159,
+  "model_correlation_mean": -0.002952283431819391,
+  "model_correlation_max": 0.061510775304562046,
+  "predictors": [
+    "f0",
+    "intensity",
+    "turns"
+  ],
+  "contributions": {
+    "f0": -0.0006758655446923445,
+    "intensity": -0.0006340201434067438,
+    "turns": -0.0013588516396298989
+  }
+}

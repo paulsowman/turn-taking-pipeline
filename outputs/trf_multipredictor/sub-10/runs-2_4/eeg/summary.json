@@ -1,0 +1,24 @@
+{
+  "subject": "sub-10",
+  "runs": [
+    2,
+    4
+  ],
+  "sensor_type": "eeg",
+  "predictors": [
+    "envelope",
+    "f0"
+  ],
+  "n_sensors": 10,
+  "total_duration_s": 374.99,
+  "model_correlations": {
+    "full": 0.04887006673989688,
+    "envelope_only": 0.03735713802017361,
+    "f0_only": 0.04349195471861419
+  },
+  "predictor_contributions": {
+    "envelope": 0.005378112021282688,
+    "f0": 0.011512928719723266
+  },
+  "n_runs_combined": 2
+}

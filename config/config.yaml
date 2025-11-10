@@ -1,0 +1,224 @@
+# Turn-Taking Prediction Pipeline Configuration
+# Phase 1: Audio-MEG Sync + Prosody + Basic TRP Detection
+
+# ============================================================================
+# DATA PATHS
+# ============================================================================
+data:
+  # Base directories
+  meg_base_dir: "/Users/em18033/Library/CloudStorage/OneDrive-SharedLibraries-MacquarieUniversity/Natural_Conversations_study - Documents/analysis/natural-conversations-bids/derivatives/mne-bids-pipeline-20240628"
+  transcript_dir: "/Users/em18033/Library/CloudStorage/OneDrive-SharedLibraries-MacquarieUniversity/Natural_Conversations_study - Documents/analysis/audios_metadata_labelled"
+  freesurfer_dir: "/Users/em18033/Library/CloudStorage/OneDrive-SharedLibraries-MacquarieUniversity/Natural_Conversations_study - Documents/analysis/natural-conversations-bids/derivatives/freesurfer/subjects"
+
+  # External audio directory
+  external_audio_base_dir: "/Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/Conversational_AI/Archive/data/audios"
+
+  # Output directory (relative to project root)
+  output_dir: "./outputs"
+
+  # File naming patterns
+  meg_pattern: "{subject}/meg/{subject}_task-conversation_run-{run:02d}_proc-clean_raw.fif"
+  fwd_pattern: "{subject}/meg/{subject}_task-conversation_fwd.fif"
+  rest_pattern: "{subject}/meg/{subject}_task-rest_proc-clean_raw.fif"
+  transcript_pattern: "G{subject_num}_B{block}.csv"
+
+  # External audio patterns (files in G{XX}/ subdirectories)
+  # Files are named: console_mic_B1.wav, subject_mic_B1.wav, etc.
+  external_audio_interviewer_pattern: "console_mic_B{block}.wav"
+  external_audio_participant_pattern: "subject_mic_B{block}.wav"
+
+# ============================================================================
+# SUBJECT SELECTION
+# ============================================================================
+subjects:
+  # List of subjects to process (use "all" for all subjects, or specify list)
+  include: "all"  # or ["sub-01", "sub-02", "sub-03"]
+  exclude: []     # List of subjects to exclude
+
+  # Subject ID range (if using "all")
+  subject_range: [1, 32]  # Process sub-01 through sub-32
+
+# ============================================================================
+# EXPERIMENTAL CONDITIONS
+# ============================================================================
+conditions:
+  conversation_runs: [1, 3, 5]    # Odd blocks
+  repetition_runs: [2, 4]         # Even blocks
+  localiser_run: 6                # Ba/Da localiser
+
+  # Map run numbers to condition labels
+  run_to_condition:
+    1: "conversation"
+    2: "repetition"
+    3: "conversation"
+    4: "repetition"
+    5: "conversation"
+    6: "localiser"
+
+# ============================================================================
+# AUDIO-MEG SYNCHRONIZATION (Task 1)
+# ============================================================================
+sync:
+  # MEG auxiliary audio channel
+  aux_channel_name: "MISC 007"  # Default auxiliary audio channel in MEG
+  fs_meg_aux: 1000             # Sampling rate of MEG auxiliary channel (Hz)
+
+  # Preprocessing
+  lowpass_freq: 400            # Low-pass filter before downsampling (Hz)
+  envelope_lowpass: 15         # Envelope low-pass for cross-correlation (Hz)
+
+  # Cross-correlation parameters
+  max_lag_s: 10.0              # Maximum time lag to search (seconds)
+
+  # Drift estimation
+  use_windowed_sync: true      # Enable windowed drift correction
+  window_size_s: 90            # Window size for drift estimation (seconds)
+  window_overlap: 0.5          # Window overlap fraction (0-1)
+  drift_model: "linear"        # "linear" or "piecewise"
+
+  # Quality control
+  target_alignment_error_ms: 10.0  # Target median alignment error (ms)
+  max_acceptable_error_ms: 50.0    # Maximum acceptable alignment error (ms)
+
+  # Output
+  save_diagnostic_plots: true
+  save_sync_params: true
+
+# ============================================================================
+# AUTOMATIC SPEECH RECOGNITION (for word-level timestamps)
+# ============================================================================
+asr:
+  # Model selection
+  engine: "whisper"  # Options: "whisper", "nemo_parakeet", "wav2vec2"
+
+  # Whisper settings (recommended for ease of use)
+  whisper:
+    model_size: "base"  # Options: "tiny", "base", "small", "medium", "large"
+    language: "en"
+    task: "transcribe"
+    compute_type: "float16"  # "float16" for GPU, "int8" for CPU
+
+  # NeMo Parakeet settings (if available)
+  nemo:
+    model_name: "stt_en_conformer_ctc_large"
+
+  # Output
+  word_timestamps: true        # Extract word-level timestamps
+  align_to_meg_time: true      # Convert timestamps to MEG timebase
+  save_transcripts: true       # Save ASR outputs as JSON
+
+# ============================================================================
+# PROSODY FEATURE EXTRACTION (Task 2)
+# ============================================================================
+prosody:
+  # F0 (pitch) extraction
+  f0_min: 75                   # Minimum F0 (Hz)
+  f0_max: 500                  # Maximum F0 (Hz)
+  f0_method: "praat"           # "praat" (Parselmouth) or "pyin" (librosa)
+
+  # Frame-level parameters
+  frame_length_ms: 25          # Analysis frame length (ms)
+  hop_length_ms: 10            # Hop size between frames (ms)
+
+  # Features to extract
+  features:
+    - "f0_mean"                # Mean F0 in window
+    - "f0_std"                 # F0 standard deviation
+    - "f0_slope"               # F0 slope (linear regression)
+    - "f0_final_drop"          # F0 drop in final 200ms
+    - "energy_rms"             # RMS energy
+    - "spectral_flux"          # Spectral flux (change)
+    - "pause_duration"         # Duration of silence before/after
+    - "speech_rate"            # Syllables per second (estimated)
+    - "final_lengthening"      # Duration ratio of final syllable
+
+  # Aggregation windows
+  window_type: "utterance"     # "utterance", "word", or "fixed_time"
+  fixed_window_ms: 500         # If using fixed_time
+
+  # Output
+  output_format: "csv"         # CSV with time-aligned features
+  align_to_meg_time: true
+
+# ============================================================================
+# TRP (Transition Relevance Place) DETECTION (Task 6)
+# ============================================================================
+trp:
+  # TRP detection criteria
+  pause_threshold_ms: 200      # Minimum pause to consider TRP (ms)
+  min_utterance_duration_s: 0.5  # Minimum utterance length
+
+  # Prosodic cues for TRP
+  use_f0_drop: true            # F0 drop in final portion
+  f0_drop_threshold: 0.2       # Relative F0 drop (0-1)
+  use_final_lengthening: true  # Syllable lengthening
+  lengthening_threshold: 1.3   # Duration ratio threshold
+
+  # Syntactic completion (if available)
+  use_syntax: false            # Requires dependency parsing
+
+  # Turn-taking outcome definition
+  turn_entry_window_ms: 300    # Time window for turn entry (ms)
+
+  # Output
+  save_trp_events: true        # Save TRP event table
+  include_context: true        # Include surrounding utterances
+
+# ============================================================================
+# QUALITY CONTROL
+# ============================================================================
+qc:
+  # Synchronization QC
+  sync_qc:
+    plot_envelope_alignment: true
+    plot_drift_estimates: true
+    check_onset_alignment: true
+    onset_detection_threshold: 0.1  # Energy threshold for onset detection
+
+  # Feature QC
+  feature_qc:
+    check_distributions: true
+    check_missing_values: true
+    check_outliers: true
+    outlier_threshold_sd: 5.0
+    compute_vif: true           # Variance Inflation Factor for multicollinearity
+
+  # General QC
+  verbose: true
+  save_qc_reports: true
+  plot_format: "png"            # "png", "pdf", or "svg"
+
+# ============================================================================
+# PROCESSING OPTIONS
+# ============================================================================
+processing:
+  # Parallelization
+  n_jobs: -3                   # Number of parallel jobs (-3 = all CPUs - 3)
+  backend: "loky"              # "loky", "threading", or "multiprocessing"
+
+  # Caching
+  cache_intermediate: true     # Cache intermediate results
+  cache_dir: "./outputs/.cache"
+  overwrite_cache: false       # Set to true to recompute
+
+  # Logging
+  log_level: "INFO"            # "DEBUG", "INFO", "WARNING", "ERROR"
+  log_file: "./outputs/pipeline.log"
+
+  # Random seed
+  random_seed: 42
+
+# ============================================================================
+# PHASE 1 SPECIFIC SETTINGS
+# ============================================================================
+phase1:
+  # What to run
+  run_sync: true
+  run_asr: true
+  run_prosody: true
+  run_trp: true
+
+  # Which sessions to process
+  process_conversation: true
+  process_repetition: true
+  process_localiser: false     # Skip localiser for Phase 1

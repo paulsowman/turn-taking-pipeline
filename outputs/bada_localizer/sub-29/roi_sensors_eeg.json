@@ -1,0 +1,64 @@
+{
+  "sensor_type": "eeg",
+  "left_hemisphere": {
+    "indices": [
+      14,
+      19,
+      9,
+      18,
+      24
+    ],
+    "names": [
+      "T7",
+      "TP9",
+      "FT7",
+      "TP7",
+      "P7"
+    ],
+    "n_sensors": 5
+  },
+  "right_hemisphere": {
+    "indices": [
+      30,
+      39,
+      38,
+      33,
+      34
+    ],
+    "names": [
+      "Fp2",
+      "FC6",
+      "FC4",
+      "F2",
+      "F4"
+    ],
+    "n_sensors": 5
+  },
+  "combined": {
+    "indices": [
+      14,
+      19,
+      9,
+      18,
+      24,
+      30,
+      39,
+      38,
+      33,
+      34
+    ],
+    "names": [
+      "T7",
+      "TP9",
+      "FT7",
+      "TP7",
+      "P7",
+      "Fp2",
+      "FC6",
+      "FC4",
+      "F2",
+      "F4"
+    ],
+    "n_sensors": 10
+  }
+}

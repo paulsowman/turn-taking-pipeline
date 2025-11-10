@@ -1,0 +1,24 @@
+{
+  "subject": "sub-09",
+  "runs": [
+    2,
+    4
+  ],
+  "sensor_type": "mag",
+  "predictors": [
+    "envelope",
+    "f0"
+  ],
+  "n_sensors": 20,
+  "total_duration_s": 379.99,
+  "model_correlations": {
+    "full": 0.05205741896884195,
+    "envelope_only": 0.041026356219499675,
+    "f0_only": 0.04033117778747292
+  },
+  "predictor_contributions": {
+    "envelope": 0.01172624118136903,
+    "f0": 0.011031062749342277
+  },
+  "n_runs_combined": 2
+}

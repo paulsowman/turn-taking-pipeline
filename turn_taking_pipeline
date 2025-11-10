@@ -1,0 +1,304 @@
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | TESTING ASR + PROSODY PIPELINE
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | Subject: sub-01
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | Run: 1
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | 
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | Input files:
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO |   MEG: /Users/em18033/Library/CloudStorage/OneDrive-SharedLibraries-MacquarieUniversity/Natural_Conversations_study - Documents/analysis/natural-conversations-bids/derivatives/mne-bids-pipeline-20240628/sub-01/meg/sub-01_task-conversation_run-01_proc-clean_raw.fif
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO |   External audio: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/Conversational_AI/Archive/data/audios/G01/console_mic_B1.wav
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | 
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | Output directory: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | 
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | STEP 1: AUDIO-MEG SYNCHRONIZATION
+2025-10-24 14:28:53 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO |   Offset: -12.2350 s
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO |   Correlation: 0.8420
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO |   Quality: EXCELLENT
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO | 
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/sync_params.json
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO | 
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO | STEP 2: ASR TRANSCRIPTION (WHISPER)
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:28:57 | turn_taking_pipeline | INFO |   Model: base
+2025-10-24 14:29:09 | turn_taking_pipeline | INFO |   Segments: 132
+2025-10-24 14:29:09 | turn_taking_pipeline | INFO |   Total words: 913
+2025-10-24 14:29:09 | turn_taking_pipeline | INFO | 
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | TESTING ASR + PROSODY PIPELINE
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | Subject: sub-01
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | Run: 1
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | 
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | Input files:
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO |   MEG: /Users/em18033/Library/CloudStorage/OneDrive-SharedLibraries-MacquarieUniversity/Natural_Conversations_study - Documents/analysis/natural-conversations-bids/derivatives/mne-bids-pipeline-20240628/sub-01/meg/sub-01_task-conversation_run-01_proc-clean_raw.fif
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO |   External audio: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/Conversational_AI/Archive/data/audios/G01/console_mic_B1.wav
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | 
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | Output directory: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | 
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | STEP 1: AUDIO-MEG SYNCHRONIZATION
+2025-10-24 14:30:52 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO |   Offset: -12.2350 s
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO |   Correlation: 0.8420
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO |   Quality: EXCELLENT
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO | 
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/sync_params.json
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO | 
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO | STEP 2: ASR TRANSCRIPTION (WHISPER)
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:30:56 | turn_taking_pipeline | INFO |   Model: base
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO |   Segments: 132
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO |   Total words: 913
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO | 
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO |   Detected turns: 85
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO | 
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/transcript.csv
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/turns.csv
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO | 
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO | STEP 3: PROSODY EXTRACTION
+2025-10-24 14:31:07 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | TESTING ASR + PROSODY PIPELINE
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | Subject: sub-01
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | Run: 1
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | 
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | Input files:
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO |   MEG: /Users/em18033/Library/CloudStorage/OneDrive-SharedLibraries-MacquarieUniversity/Natural_Conversations_study - Documents/analysis/natural-conversations-bids/derivatives/mne-bids-pipeline-20240628/sub-01/meg/sub-01_task-conversation_run-01_proc-clean_raw.fif
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO |   External audio: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/Conversational_AI/Archive/data/audios/G01/console_mic_B1.wav
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | 
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | Output directory: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | 
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | STEP 1: AUDIO-MEG SYNCHRONIZATION
+2025-10-24 14:32:42 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO |   Offset: -12.2350 s
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO |   Correlation: 0.8420
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO |   Quality: EXCELLENT
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO | 
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/sync_params.json
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO | 
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO | STEP 2: ASR TRANSCRIPTION (WHISPER)
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:32:46 | turn_taking_pipeline | INFO |   Model: base
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO |   Segments: 132
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO |   Total words: 913
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO | 
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO |   Detected turns: 85
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO | 
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/transcript.csv
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/turns.csv
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO | 
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO | STEP 3: PROSODY EXTRACTION
+2025-10-24 14:32:57 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Frames: 36062
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Duration: 360.6s
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Mean F0: 181.0 Hz
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Voiced: 19.5%
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Pauses detected: 2
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Speech rate timepoints: 143
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Mean rate: 3.33 words/s
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/prosody.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/pauses.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/speech_rate.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | STEP 4: TRP FEATURE EXTRACTION
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   TRP candidates: 1
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Mean F0 slope: 0.00 Hz/s
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Segment-final TRPs: 0
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/trp_features.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | PIPELINE COMPLETE - SUMMARY
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ✓ Synchronization: EXCELLENT
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ✓ Transcription: 132 segments, 85 turns
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ✓ Prosody: 36062 frames, 2 pauses
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ✓ TRP candidates: 1
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | Output files:
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/sync_params.json
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/transcript.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/turns.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/prosody.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/pauses.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/speech_rate.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-01/trp_features.csv
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | 
+2025-10-24 14:33:02 | turn_taking_pipeline | INFO | ✓ TEST PASSED - Ready for TRF modeling!
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | TESTING ASR + PROSODY PIPELINE
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | Subject: sub-01
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | Run: 3
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | Input files:
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO |   MEG: /Users/em18033/Library/CloudStorage/OneDrive-SharedLibraries-MacquarieUniversity/Natural_Conversations_study - Documents/analysis/natural-conversations-bids/derivatives/mne-bids-pipeline-20240628/sub-01/meg/sub-01_task-conversation_run-03_proc-clean_raw.fif
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO |   External audio: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/Conversational_AI/Archive/data/audios/G01/console_mic_B3.wav
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | Output directory: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | STEP 1: AUDIO-MEG SYNCHRONIZATION
+2025-10-28 13:19:09 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | TESTING ASR + PROSODY PIPELINE
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | Subject: sub-01
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | Run: 5
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | Input files:
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO |   MEG: /Users/em18033/Library/CloudStorage/OneDrive-SharedLibraries-MacquarieUniversity/Natural_Conversations_study - Documents/analysis/natural-conversations-bids/derivatives/mne-bids-pipeline-20240628/sub-01/meg/sub-01_task-conversation_run-05_proc-clean_raw.fif
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO |   External audio: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/Conversational_AI/Archive/data/audios/G01/console_mic_B5.wav
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | Output directory: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | STEP 1: AUDIO-MEG SYNCHRONIZATION
+2025-10-28 13:19:10 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Offset: -3.8380 s
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Correlation: 0.9391
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Quality: EXCELLENT
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/sync_params.json
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | STEP 2: ASR TRANSCRIPTION (WHISPER)
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Model: base
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Offset: -5.3380 s
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Correlation: 0.9196
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Quality: EXCELLENT
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/sync_params.json
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | STEP 2: ASR TRANSCRIPTION (WHISPER)
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:13 | turn_taking_pipeline | INFO |   Model: base
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO |   Segments: 143
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO |   Total words: 981
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO |   Detected turns: 80
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/transcript.csv
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/turns.csv
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO | STEP 3: PROSODY EXTRACTION
+2025-10-28 13:19:30 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO |   Segments: 185
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO |   Total words: 898
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO |   Detected turns: 96
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/transcript.csv
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/turns.csv
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO | STEP 3: PROSODY EXTRACTION
+2025-10-28 13:19:32 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO |   Frames: 36059
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO |   Duration: 360.6s
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO |   Mean F0: 161.5 Hz
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO |   Voiced: 21.9%
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO |   Pauses detected: 2
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO |   Speech rate timepoints: 143
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO |   Mean rate: 3.47 words/s
+2025-10-28 13:19:33 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/prosody.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/pauses.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/speech_rate.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | STEP 4: TRP FEATURE EXTRACTION
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   TRP candidates: 1
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   Mean F0 slope: 0.00 Hz/s
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   Segment-final TRPs: 0
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/trp_features.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | PIPELINE COMPLETE - SUMMARY
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ✓ Synchronization: EXCELLENT
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ✓ Transcription: 143 segments, 80 turns
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ✓ Prosody: 36059 frames, 2 pauses
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ✓ TRP candidates: 1
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | Output files:
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/sync_params.json
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/transcript.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/turns.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/prosody.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/pauses.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/speech_rate.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-05/trp_features.csv
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:34 | turn_taking_pipeline | INFO | ✓ TEST PASSED - Ready for TRF modeling!
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Frames: 36059
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Duration: 360.6s
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Mean F0: 164.9 Hz
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Voiced: 28.1%
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Pauses detected: 2
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Speech rate timepoints: 143
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Mean rate: 3.41 words/s
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/prosody.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/pauses.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/speech_rate.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | STEP 4: TRP FEATURE EXTRACTION
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   TRP candidates: 1
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Mean F0 slope: 0.00 Hz/s
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Segment-final TRPs: 0
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   Saved: /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/trp_features.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | PIPELINE COMPLETE - SUMMARY
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ✓ Synchronization: EXCELLENT
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ✓ Transcription: 185 segments, 96 turns
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ✓ Prosody: 36059 frames, 2 pauses
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ✓ TRP candidates: 1
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | Output files:
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/sync_params.json
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/transcript.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/turns.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/prosody.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/pauses.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/speech_rate.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO |   /Users/em18033/Library/CloudStorage/OneDrive-AUTUniversity/Projects/turn-taking-pipeline/outputs/features/sub-01/run-03/trp_features.csv
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ======================================================================
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | 
+2025-10-28 13:19:35 | turn_taking_pipeline | INFO | ✓ TEST PASSED - Ready for TRF modeling!

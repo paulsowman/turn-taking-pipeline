@@ -1,0 +1,16 @@
+{
+  "subject": "sub-01",
+  "runs": [
+    1,
+    3,
+    5
+  ],
+  "sensor_type": "eeg",
+  "envelope_method": "rms",
+  "n_sensors": 10,
+  "total_duration_s": 1124.997,
+  "envelope_sr_hz": 100.0,
+  "model_correlation_mean": 0.018664500610281416,
+  "model_correlation_max": 0.031362244403641125,
+  "n_runs_combined": 3
+}

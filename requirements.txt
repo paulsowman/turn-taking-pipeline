@@ -1,0 +1,53 @@
+# Turn-Taking Prediction Pipeline - Requirements
+# Phase 1: Audio-MEG Sync + Prosody + Basic TRP Detection
+
+# Core scientific computing
+numpy>=1.24.0
+scipy>=1.11.0
+pandas>=2.0.0
+
+# MEG/EEG processing
+mne>=1.5.0
+autoreject>=0.4.0  # For artifact rejection (if needed)
+
+# Audio processing
+librosa>=0.10.0
+soundfile>=0.12.0
+praat-parselmouth>=0.4.3  # For F0 extraction
+
+# Speech recognition (choose one or more)
+openai-whisper>=20230314  # Recommended for ease of use
+# nemo_toolkit[asr]>=1.19.0  # Uncomment if using NeMo Parakeet
+# transformers>=4.30.0  # For Wav2Vec2 or other HF models
+
+# Configuration and I/O
+pyyaml>=6.0
+joblib>=1.3.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Statistics (for Phase 2 and beyond)
+statsmodels>=0.14.0
+scikit-learn>=1.3.0
+
+# Optional: For Phase 2 LLM features
+# torch>=2.0.0
+# sentence-transformers>=2.2.0
+# transformers>=4.30.0
+
+# Optional: For Phase 3 modeling
+# bambi>=0.12.0  # Bayesian modeling
+# pymc>=5.6.0
+# lifelines>=0.27.0  # Survival analysis
+# arviz>=0.16.0  # Bayesian diagnostics
+
+# Development tools
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0
+
+# Utilities
+tqdm>=4.65.0
+python-dateutil>=2.8.2
