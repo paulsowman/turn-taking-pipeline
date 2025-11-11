@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Verify Audio-MEG Synchronization Alignment - CORRECTED VERSION
+Verify Audio-MEG Synchronization Alignment
 
 This script creates diagnostic visualizations to verify that:
 1. Audio envelope/F0 features align correctly with MEG time
@@ -13,9 +13,13 @@ Creates a multi-panel plot showing:
 - Panel 3: MEG auxiliary channel envelope vs Audio envelope (alignment check)
 - Panel 4: Zoomed view of a speech segment with word onsets
 
-CORRECTION: This version uses the correct formula for time conversion:
-    meg_time = audio_time + offset
-where positive offset means external audio starts AFTER MEG recording.
+IMPORTANT: The synchronization function uses REVERSED sign convention!
+    meg_time = audio_time - offset
+where:
+    - Negative offset → external audio starts AFTER MEG recording
+    - Positive offset → external audio starts BEFORE MEG recording
+
+Example: If offset = -12.235s, external audio starts 12.235s AFTER MEG.
 """
 
 import sys
@@ -130,12 +134,13 @@ def verify_sync_alignment(subject, run, base_dir, time_window=None, zoom_window=
 
     sync_offset = sync_params['initial_offset_s']
     print(f"Sync offset: {sync_offset:.4f} s")
-    if sync_offset > 0:
-        print(f"  → External audio starts {sync_offset:.2f}s AFTER MEG recording")
+    print(f"  NOTE: Sync function has REVERSED sign convention!")
+    if sync_offset < 0:
+        print(f"  → External audio starts {abs(sync_offset):.2f}s AFTER MEG recording")
     else:
-        print(f"  → External audio starts {abs(sync_offset):.2f}s BEFORE MEG recording")
-    print(f"  Formula: meg_time = audio_time + offset")
-    print(f"           meg_time = audio_time + ({sync_offset:.3f})\n")
+        print(f"  → External audio starts {sync_offset:.2f}s BEFORE MEG recording")
+    print(f"  Formula: meg_time = audio_time - offset")
+    print(f"           meg_time = audio_time - ({sync_offset:.3f})\n")
 
     # Load MEG data
     print("Loading MEG data...")
@@ -167,12 +172,13 @@ def verify_sync_alignment(subject, run, base_dir, time_window=None, zoom_window=
     print("Computing audio features...")
     envelope, envelope_times_audio, f0, f0_times_audio = compute_envelope_f0(audio, sr)
 
-    # CORRECTED: Convert to MEG timebase
-    # Formula: meg_time = audio_time + offset
-    # Positive offset → external audio starts AFTER MEG (add positive value)
-    # Negative offset → external audio starts BEFORE MEG (add negative value)
-    envelope_times_meg = envelope_times_audio + sync_offset
-    f0_times_meg = f0_times_audio + sync_offset
+    # Convert to MEG timebase
+    # NOTE: Sync function has REVERSED sign convention!
+    # When offset = -12.235s, it means external starts 12.235s AFTER MEG (not before)
+    # Formula: meg_time = audio_time - offset
+    # This negates the reversed sign to get correct alignment
+    envelope_times_meg = envelope_times_audio - sync_offset
+    f0_times_meg = f0_times_audio - sync_offset
 
     print(f"  Audio timebase: 0 to {envelope_times_audio[-1]:.2f}s")
     print(f"  MEG timebase:   {envelope_times_meg[0]:.2f} to {envelope_times_meg[-1]:.2f}s")
@@ -343,18 +349,18 @@ def verify_sync_alignment(subject, run, base_dir, time_window=None, zoom_window=
 
     # Check 3: Verify formula consistency
     print(f"\n3. Formula Verification:")
-    print(f"   Sync offset: {sync_offset:.4f}s")
+    print(f"   Sync offset: {sync_offset:.4f}s (reversed sign convention!)")
     sample_word = words_df.iloc[0]
     t_audio = sample_word['time_audio']
     t_meg = sample_word['time_meg']
-    # CORRECTED: ADD offset (not subtract)
-    calculated_t_meg = t_audio + sync_offset
+    # CORRECT: SUBTRACT offset (due to reversed sign convention)
+    calculated_t_meg = t_audio - sync_offset
     error = abs(t_meg - calculated_t_meg)
 
     print(f"   First word: '{sample_word['word']}'")
     print(f"   Audio time:      {t_audio:.4f}s")
     print(f"   MEG time (file): {t_meg:.4f}s")
-    print(f"   MEG time (calc): {calculated_t_meg:.4f}s  [= {t_audio:.4f} + {sync_offset:.4f}]")
+    print(f"   MEG time (calc): {calculated_t_meg:.4f}s  [= {t_audio:.4f} - ({sync_offset:.4f})]")
     print(f"   Error:           {error:.6f}s ({error*1000:.3f}ms)")
 
     if error < 0.001:

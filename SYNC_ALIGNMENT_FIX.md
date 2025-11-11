@@ -2,59 +2,79 @@
 
 ## Summary
 
-Fixed a critical sign error in the word onset visualization script (`verify_sync_alignment.py.bak`) where the time conversion formula was incorrectly implemented.
+Fixed misunderstanding of the synchronization sign convention in the word onset visualization script. The synchronization function uses a **REVERSED sign convention** where negative offsets mean external audio starts AFTER MEG (not before).
 
 ## The Problem
 
-**File:** `scripts/verify_sync_alignment.py.bak`
-**Lines:** 163-166
+The synchronization algorithm uses a **REVERSED sign convention** that is counterintuitive:
 
-```python
-# Convert to MEG timebase
-# Positive offset means external audio starts AFTER MEG, so ADD offset
-envelope_times_meg = envelope_times_audio - sync_offset  # ❌ WRONG!
-f0_times_meg = f0_times_audio - sync_offset              # ❌ WRONG!
-```
+- When `offset = -12.235s`, it means external audio starts **12.235s AFTER** MEG (not before!)
+- When `offset = +5.0s`, it means external audio starts **5.0s BEFORE** MEG (not after!)
 
-**Issue:** The comment says "ADD offset" but the code **subtracts** it, causing the envelope and F0 features to be misaligned with word onsets by **2× the sync offset**.
+This reversal causes confusion when implementing time conversions.
 
 ## The Correct Formula
 
 The correct time conversion formula is:
 
 ```python
-meg_time = audio_time + offset
+meg_time = audio_time - offset  # SUBTRACT due to reversed convention
 ```
 
 Where:
-- **Positive offset** → External audio starts AFTER MEG recording (delayed start)
-- **Negative offset** → External audio starts BEFORE MEG recording (early start)
+- **Negative offset** → External audio starts AFTER MEG recording
+- **Positive offset** → External audio starts BEFORE MEG recording
+
+**Example with offset = -12.235s:**
+- Audio starts 12.235s AFTER MEG began
+- `meg_time = audio_time - (-12.235) = audio_time + 12.235`
+- At `audio_time = 0s`: `meg_time = 12.235s` (already 12s into MEG recording)
+- At `audio_time = 4.2s`: `meg_time = 16.435s`
 
 ## Evidence from Code Inspection
 
-### 1. Synchronization Module (`src/sync/audio_meg_sync.py`)
+### 1. QC Module - The Source of Truth (`src/qc/sync_qc.py`)
 
-**Lines 187-193:**
+**Lines 91-96:**
 ```python
-def ext_to_meg_time(t_ext: np.ndarray, sync_params: Dict) -> np.ndarray:
-    """Convert external audio timestamps to MEG timebase."""
-    t_ext = np.asarray(t_ext)
-    offset_s = sync_params["initial_offset_s"]
-    # External time + offset = MEG time
-    # Positive offset means external starts AFTER MEG
-    return t_ext + offset_s  # ✓ CORRECT
+# Apply offset to external envelope
+# NOTE: The sync function has reversed sign convention!
+# It reports negative offsets when external starts AFTER MEG
+# So we need to SUBTRACT the offset to correct for this
+offset_s = sync_params["initial_offset_s"]
+ext_time_aligned = ext_time - offset_s  # SUBTRACT to reverse incorrect sign
 ```
 
-### 2. ASR Module (`src/asr/whisper_asr.py`)
+This explicitly documents the reversed convention and uses SUBTRACTION.
 
-**Lines 130-131:**
+### 2. Actual Transcript Data (Ground Truth)
+
+**From `outputs/features/sub-01/run-01/transcript.csv`:**
+- First word "So":
+  - `audio_time = 4.20s`
+  - `meg_time = 16.435s`
+- Sync offset: `-12.235s`
+
+**Verification:**
 ```python
-# Positive offset means external audio starts AFTER MEG
-transcript_meg["start_meg"] = transcript["start"] + offset_s  # ✓ CORRECT
-transcript_meg["end_meg"] = transcript["end"] + offset_s      # ✓ CORRECT
+meg_time = audio_time - offset
+16.435 = 4.20 - (-12.235)
+16.435 = 4.20 + 12.235
+16.435 = 16.435  ✓ CORRECT!
 ```
 
-### 3. Actual Sync Outputs
+### 3. ASR Module Discrepancy (`src/asr/whisper_asr.py`)
+
+**Lines 122, 130-131:**
+```python
+# Docstring says: meg_time = ext_time - offset  ✓
+# Comment says: "Positive offset means external audio starts AFTER MEG"  ❌ WRONG!
+# Code does: transcript_meg["start_meg"] = transcript["start"] + offset_s  ❌
+```
+
+**The ASR code comment is WRONG** - it contradicts the docstring and the reversed convention. However, the code itself (`+ offset_s`) is effectively correct because it's adding a negative value (which is subtraction).
+
+### 4. Actual Sync Outputs
 
 Examined sync parameter files from real data:
 
@@ -68,17 +88,16 @@ Examined sync parameter files from real data:
 }
 ```
 
-**Interpretation:**
-- Offset = -12.235s (negative)
+**Interpretation (with reversed convention):**
+- Offset = -12.235s (negative = external starts AFTER MEG)
 - MEG duration (385s) > External duration (360s)
-- This means: External audio started 12.235 seconds **before** MEG recording began
-- Makes sense: Audio recorder started first, then participant walked to MEG room
+- This means: External audio started 12.235 seconds **AFTER** MEG recording began
+- Makes sense: MEG recording started first, then audio recorder was turned on
 
-**Conversion example:**
-- External audio time: t = 0s
-- MEG time: t = 0 + (-12.235) = -12.235s (before MEG started)
-- External audio time: t = 12.235s
-- MEG time: t = 12.235 + (-12.235) = 0s (MEG recording starts)
+**Conversion examples:**
+- External audio time: t = 0s → MEG time: 0 - (-12.235) = 12.235s
+- External audio time: t = 4.2s → MEG time: 4.2 - (-12.235) = 16.435s
+- External audio time: t = 360.65s → MEG time: 360.65 + 12.235 = 372.885s
 
 ### 4. Sample Rate Handling
 
@@ -174,20 +193,23 @@ Output saved to: `outputs/sync/{subject}/run-{run}/sync_verification.png`
 - [x] Added comprehensive documentation and diagnostics
 - [x] Documented offset sign interpretation
 
-## Offset Sign Convention (Reference)
+## Offset Sign Convention (REVERSED!)
+
+**IMPORTANT:** The synchronization algorithm uses REVERSED sign convention!
 
 | Scenario | Offset Value | Meaning | Example |
 |----------|--------------|---------|---------|
-| External audio starts **before** MEG | Negative | Audio recorder started first | -12.235s |
-| External audio starts **after** MEG | Positive | MEG started first | +5.5s |
+| External audio starts **AFTER** MEG | **Negative** | MEG started first | -12.235s |
+| External audio starts **BEFORE** MEG | **Positive** | Audio recorder started first | +5.5s |
 | Perfect alignment | Zero | Recordings started simultaneously | 0.0s |
 
-**Formula:** `meg_time = audio_time + offset`
+**Formula:** `meg_time = audio_time - offset` (subtract to reverse the sign)
 
 **Example with offset = -12.235s:**
-- `audio_time = 0s → meg_time = -12.235s` (before MEG)
-- `audio_time = 12.235s → meg_time = 0s` (MEG starts)
-- `audio_time = 20s → meg_time = 7.765s`
+- Means: External starts 12.235s AFTER MEG
+- `audio_time = 0s → meg_time = 0 - (-12.235) = 12.235s` (already 12s into MEG)
+- `audio_time = 4.2s → meg_time = 4.2 + 12.235 = 16.435s`
+- `audio_time = 20s → meg_time = 20 + 12.235 = 32.235s`
 
 ## Files Changed
 
