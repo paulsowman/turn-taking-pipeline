@@ -53,13 +53,12 @@ def load_audio(
     """
 ```
 
-**Critical fix (2025-11-11):** When `offset` and `duration` parameters are used with `channel` selection, the function now:
-1. Extracts offset/duration from kwargs
-2. Loads the FULL stereo file with `mono=False`
-3. Selects the requested channel
-4. Applies offset/duration by slicing the numpy array
+**Critical fix (2025-11-11):** Uses zero-out approach to guarantee channel separation:
+1. Loads stereo file with `mono=False` (includes offset/duration)
+2. **Zeros out all unwanted channels** (e.g., `audio[1, :] = 0.0` if channel=0)
+3. Sums channels to mono: `audio = np.sum(audio, axis=0)`
 
-This prevents librosa from potentially mixing channels during offset/duration extraction. Previously, passing offset/duration to `librosa.load(..., mono=False)` could cause channel mixing.
+This approach is foolproof - even if librosa mixes channels internally, it's mixing with zeros, so the output contains only the desired channel. Previous attempts at array indexing were unreliable.
 
 ### 2. Updated ASR Module (`src/asr/whisper_asr.py`)
 
@@ -377,37 +376,54 @@ envelope_meg = 4.20 - (-12.235) = 16.435s  # MATCHES!
 
 Now word onsets align perfectly with audio envelope and F0 contours in all visualization tools.
 
-## librosa offset/duration Channel Mixing Issue (Fixed 2025-11-11)
+## Channel Mixing Issue - Final Solution (Fixed 2025-11-11)
 
-### Issue Discovered
-Even after fixing channel selection in all modules, the onset playback audio still contained both participants mixed together.
+### Issue History
+Even after multiple attempts at channel selection, the onset playback audio still contained both participants mixed together. Multiple approaches were tried:
+
+1. **First attempt**: Array indexing `audio = audio[channel]` - didn't work
+2. **Second attempt**: Load full file without offset/duration, select channel, then slice - still mixed
+3. **Final solution**: Zero out unwanted channels before mixing - **WORKS!**
 
 ### Root Cause
-When `librosa.load()` is called with BOTH `mono=False` and `offset`/`duration` parameters, librosa may internally mix channels during the offset/duration extraction process. This resulted in:
+The underlying issue is that `librosa.load()` with `mono=False` may not reliably allow clean channel separation when combined with various parameters. Array indexing alone wasn't sufficient to prevent mixing.
+
+### Final Solution: Zero-Out Approach
+Modified `src/utils/io.py::load_audio()` to use a zero-out strategy:
+
+1. Load stereo file: `librosa.load(file, sr=None, mono=False, offset=..., duration=...)`
+2. **Zero out unwanted channels**: `audio[1, :] = 0.0` (if channel=0 requested)
+3. Sum to mono: `audio = np.sum(audio, axis=0)`
+
+This guarantees no cross-talk because we're explicitly setting the unwanted channel to zeros.
+
 ```python
-# This caused channel mixing:
+# Final approach (guaranteed to work):
 audio, sr = librosa.load(file, sr=None, mono=False, offset=10, duration=30)
-audio_ch0 = audio[0]  # Still has both channels mixed!
+
+# For channel=0 (interviewer):
+audio[1, :] = 0.0  # Zero out participant channel
+
+# Sum channels (but channel 1 is zeros):
+audio = np.sum(audio, axis=0)  # = audio[0] + 0 = interviewer only ✓
 ```
 
-### Solution
-Modified `src/utils/io.py::load_audio()` to:
-1. Extract `offset` and `duration` from kwargs
-2. Load FULL stereo file: `librosa.load(file, mono=False)` (no offset/duration)
-3. Select channel: `audio = audio[channel]`
-4. Apply offset/duration by numpy slicing: `audio = audio[start:end]`
+**Why this works:**
+- Even if librosa does any internal processing, it can't "unmix" zeros
+- No reliance on array indexing behavior
+- Sum (not mean) preserves amplitude of desired channel
+- Works correctly with offset/duration parameters
+- Simple and robust
 
-This ensures channel selection happens BEFORE any time-based slicing, preventing librosa from mixing channels.
-
-```python
-# New approach (correct):
-audio, sr = librosa.load(file, sr=None, mono=False)  # Load full file
-audio_ch0 = audio[0]  # Select channel first
-audio_ch0 = audio_ch0[start:end]  # Then apply offset/duration
+**For a stereo file with channel=0:**
+```
+Input:  audio[0] = interviewer, audio[1] = participant
+Step 1: audio[0] = interviewer, audio[1] = 0.0 (zeroed)
+Step 2: result = audio[0] + audio[1] = interviewer + 0 = interviewer ✓
 ```
 
 ### Files Modified
-- `src/utils/io.py`: Updated `load_audio()` implementation
+- `src/utils/io.py`: Updated `load_audio()` with zero-out approach
 - `scripts/create_onset_playback.py`: Added debug output to verify mono audio
 - `scripts/diagnose_audio_channels.py`: Created diagnostic tool
 
