@@ -132,11 +132,23 @@ def load_audio(
     if not file_path.exists():
         raise FileNotFoundError(f"Audio file not found: {file_path}")
 
+    # Extract offset and duration from kwargs if present
+    # We'll handle these AFTER channel selection to avoid librosa mixing channels
+    offset = kwargs.pop('offset', None)
+    duration = kwargs.pop('duration', None)
+
     if channel is None:
         # Mix to mono (average channels)
+        # Pass offset/duration to librosa since we're not doing channel selection
+        if offset is not None:
+            kwargs['offset'] = offset
+        if duration is not None:
+            kwargs['duration'] = duration
         audio, sr_out = librosa.load(str(file_path), sr=sr, mono=True, **kwargs)
     else:
-        # Load as stereo, then select channel
+        # CRITICAL: Load as stereo WITHOUT offset/duration first
+        # Then select channel, THEN apply offset/duration by slicing
+        # This prevents librosa from potentially mixing channels during offset/duration processing
         audio, sr_out = librosa.load(str(file_path), sr=sr, mono=False, **kwargs)
 
         # Handle mono files (returned as 1D array)
@@ -156,6 +168,15 @@ def load_audio(
                     f"Valid channels: 0-{audio.shape[0]-1}"
                 )
             audio = audio[channel]
+
+        # Now apply offset and duration by slicing the selected channel
+        if offset is not None or duration is not None:
+            start_sample = int(offset * sr_out) if offset is not None else 0
+            if duration is not None:
+                end_sample = start_sample + int(duration * sr_out)
+                audio = audio[start_sample:end_sample]
+            else:
+                audio = audio[start_sample:]
 
     return audio, sr_out
 

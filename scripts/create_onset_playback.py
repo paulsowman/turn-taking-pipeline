@@ -87,12 +87,21 @@ def create_onset_playback(subject, run, base_dir, start_time=0, duration=30,
     # Load audio
     print(f"Loading audio from {start_time:.1f}s to {start_time + duration:.1f}s...")
     audio_file = paths['external_audio_interviewer']
-    # Use channel 0 (left) for console_mic files - interviewer only
+
+    # IMPORTANT: Load stereo file and select only left channel (interviewer)
+    # to avoid participant leakage from right channel
     sys.path.insert(0, str(base_dir / "src"))
     from utils.io import load_audio
     audio, sr = load_audio(audio_file, sr=None, channel=0, offset=start_time, duration=duration)
 
     print(f"  Audio: {len(audio)/sr:.1f}s @ {sr} Hz")
+    print(f"  Audio shape: {audio.shape} (should be 1D for mono)")
+    print(f"  Audio dtype: {audio.dtype}")
+    print(f"  Channel: 0 (left/interviewer only)")
+
+    # Verify audio is mono (1D array)
+    if audio.ndim != 1:
+        raise ValueError(f"ERROR: Audio should be 1D (mono) but got shape {audio.shape}. Channel selection failed!")
 
     # Load word onsets
     print("Loading word onsets...")
