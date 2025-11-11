@@ -21,6 +21,7 @@ def transcribe_audio(
     model_name: str = "base",
     language: str = "en",
     device: Optional[str] = None,
+    channel: Optional[int] = 0,
 ) -> pd.DataFrame:
     """
     Transcribe audio file using Whisper with word-level timestamps.
@@ -36,6 +37,11 @@ def transcribe_audio(
         Language code (e.g., 'en' for English).
     device : str, optional
         Device to run model on ('cpu' or 'cuda'). Auto-detected if None.
+    channel : int, optional
+        Channel to transcribe for stereo files:
+        - 0: Left channel (default, interviewer for console_mic)
+        - 1: Right channel (participant for console_mic)
+        - None: Mix to mono (NOT RECOMMENDED for dual-mic recordings)
 
     Returns
     -------
@@ -54,6 +60,7 @@ def transcribe_audio(
     - Uses Whisper's word-level timestamps (requires Whisper >= 20230314)
     - Segments are determined by Whisper's VAD and natural pauses
     - Word timestamps enable fine-grained prosody analysis
+    - For dual-mic recordings: ALWAYS specify channel to avoid cross-talk
     """
     audio_path = Path(audio_path)
     logger.info(f"Loading Whisper model: {model_name}")
@@ -61,12 +68,22 @@ def transcribe_audio(
     # Load model
     model = whisper.load_model(model_name, device=device)
 
+    # Load audio with proper channel selection to avoid leakage
     logger.info(f"Transcribing: {audio_path.name}")
+    if channel is not None:
+        logger.info(f"  Using channel {channel} (0=left/interviewer, 1=right/participant)")
+
+    from utils.io import load_audio
+    # Whisper expects 16kHz audio
+    audio, sr = load_audio(audio_path, sr=16000, channel=channel)
+
+    logger.info(f"  Loaded {len(audio)/sr:.1f}s of audio @ {sr} Hz")
 
     # Transcribe with word-level timestamps
+    # Pass numpy array instead of file path to use our channel-selected audio
     try:
         result = model.transcribe(
-            str(audio_path),
+            audio,  # Pass numpy array with selected channel
             language=language,
             word_timestamps=True,  # Enable word-level timing
             verbose=False,
@@ -126,9 +143,12 @@ def align_to_meg_time(
     transcript_meg = transcript.copy()
 
     # Convert segment times
-    # Positive offset means external audio starts AFTER MEG
-    transcript_meg["start_meg"] = transcript["start"] + offset_s
-    transcript_meg["end_meg"] = transcript["end"] + offset_s
+    # NOTE: Sync function uses REVERSED sign convention!
+    # Negative offset = external starts AFTER MEG (subtract negative = add)
+    # Positive offset = external starts BEFORE MEG (subtract positive = subtract)
+    # Formula: meg_time = audio_time - offset
+    transcript_meg["start_meg"] = transcript["start"] - offset_s
+    transcript_meg["end_meg"] = transcript["end"] - offset_s
 
     # Convert word times
     def convert_words(words):
@@ -137,8 +157,8 @@ def align_to_meg_time(
         return [
             {
                 **word,
-                "start_meg": word["start"] + offset_s,
-                "end_meg": word["end"] + offset_s,
+                "start_meg": word["start"] - offset_s,
+                "end_meg": word["end"] - offset_s,
             }
             for word in words
         ]

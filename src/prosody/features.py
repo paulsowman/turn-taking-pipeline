@@ -24,6 +24,7 @@ def extract_prosody_features(
     frame_shift: float = 0.01,  # 10ms frames
     f0_min: float = 75.0,
     f0_max: float = 500.0,
+    channel: Optional[int] = 0,
 ) -> pd.DataFrame:
     """
     Extract comprehensive prosodic features from audio.
@@ -38,6 +39,11 @@ def extract_prosody_features(
         Time step between frames (seconds). Default 10ms.
     f0_min, f0_max : float
         F0 (pitch) search range in Hz.
+    channel : int, optional
+        Channel to load for stereo files:
+        - 0: Left channel (default, interviewer for console_mic)
+        - 1: Right channel (participant for console_mic)
+        - None: Mix to mono (NOT RECOMMENDED for dual-mic recordings)
 
     Returns
     -------
@@ -58,17 +64,23 @@ def extract_prosody_features(
     - Uses Praat's autocorrelation method for robust F0 extraction
     - Frame-by-frame features for alignment with MEG data
     - Suitable for TRF modeling and turn-taking prediction
+    - For dual-mic recordings: ALWAYS specify channel to avoid cross-talk
     """
     audio_path = Path(audio_path)
     logger.info(f"Extracting prosody from: {audio_path.name}")
+    if channel is not None:
+        logger.info(f"  Using channel {channel} (0=left/interviewer, 1=right/participant)")
 
-    # Load audio with Praat
-    snd = parselmouth.Sound(str(audio_path))
+    # Load audio with proper channel selection
+    from utils.io import load_audio
+    y, sr_librosa = load_audio(audio_path, sr=sr, channel=channel)
+
+    # Create Parselmouth Sound object from audio array
+    # Parselmouth.Sound can be created from numpy array
+    snd = parselmouth.Sound(y, sampling_frequency=sr_librosa)
     if sr is not None and snd.sampling_frequency != sr:
         snd = snd.resample(sr)
-
-    # Load with librosa for spectral features
-    y, sr_librosa = librosa.load(str(audio_path), sr=sr)
+        sr_librosa = sr
 
     # === F0 (Pitch) Extraction ===
     logger.info("Extracting F0...")
