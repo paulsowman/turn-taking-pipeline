@@ -54,8 +54,13 @@ def synchronize_audio_meg(
     meg_audio, meg_sfreq = _extract_meg_audio(meg_raw, aux_channel)
 
     # 2. Load external audio
+    # IMPORTANT: Use channel=0 (left) for console_mic files to avoid participant leakage
+    # Console mic has interviewer on left (ch 0) and participant on right (ch 1)
     logger.info(f"Loading external audio: {external_audio_path}")
-    ext_audio, ext_sfreq = librosa.load(str(external_audio_path), sr=None, mono=True)
+    from utils.io import load_audio
+    audio_channel = sync_cfg.get("audio_channel", 0)  # Default to left channel
+    ext_audio, ext_sfreq = load_audio(external_audio_path, sr=None, channel=audio_channel)
+    logger.info(f"  Using channel {audio_channel} (0=left/interviewer, 1=right/participant)")
 
     logger.info(f"MEG audio: {len(meg_audio)/meg_sfreq:.1f}s at {meg_sfreq}Hz")
     logger.info(f"External audio: {len(ext_audio)/ext_sfreq:.1f}s at {ext_sfreq}Hz")
@@ -432,8 +437,12 @@ def _assess_quality(correlation: float) -> str:
 # Helper functions for QC plotting (called by test scripts)
 def _load_external_audio(audio_path: Path, config: Dict = None) -> Tuple[np.ndarray, float]:
     """Load external audio file for QC plotting."""
-    import librosa
-    audio, sr = librosa.load(str(audio_path), sr=None, mono=True)
+    from utils.io import load_audio
+    # Use channel 0 (left) for console_mic files to avoid participant leakage
+    audio_channel = 0
+    if config and "sync" in config:
+        audio_channel = config["sync"].get("audio_channel", 0)
+    audio, sr = load_audio(audio_path, sr=None, channel=audio_channel)
     return audio, sr
 
 

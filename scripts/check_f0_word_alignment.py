@@ -121,7 +121,10 @@ def analyze_f0_word_alignment(subject, run, base_dir, window_ms=50):
     # Load audio
     print("Loading audio...")
     audio_file = paths['external_audio_interviewer']
-    audio, sr = librosa.load(audio_file, sr=None)
+    # Use channel 0 (left) for console_mic files - interviewer only
+    sys.path.insert(0, str(base_dir / "src"))
+    from utils.io import load_audio
+    audio, sr = load_audio(audio_file, sr=None, channel=0)
 
     # Compute F0
     print("Computing F0...")

@@ -87,7 +87,10 @@ def create_onset_playback(subject, run, base_dir, start_time=0, duration=30,
     # Load audio
     print(f"Loading audio from {start_time:.1f}s to {start_time + duration:.1f}s...")
     audio_file = paths['external_audio_interviewer']
-    audio, sr = librosa.load(audio_file, sr=None, offset=start_time, duration=duration)
+    # Use channel 0 (left) for console_mic files - interviewer only
+    sys.path.insert(0, str(base_dir / "src"))
+    from utils.io import load_audio
+    audio, sr = load_audio(audio_file, sr=None, channel=0, offset=start_time, duration=duration)
 
     print(f"  Audio: {len(audio)/sr:.1f}s @ {sr} Hz")
 

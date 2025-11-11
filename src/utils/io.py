@@ -3,8 +3,9 @@
 import json
 import pandas as pd
 import mne
+import librosa
 from pathlib import Path
-from typing import Dict, Union, List, Optional
+from typing import Dict, Union, List, Optional, Tuple
 import numpy as np
 
 
@@ -80,6 +81,83 @@ def load_transcript(
         return pd.DataFrame(data)
     else:
         raise ValueError(f"Unknown format: {format}")
+
+
+def load_audio(
+    file_path: Union[str, Path],
+    sr: Optional[int] = None,
+    channel: Optional[int] = 0,
+    **kwargs
+) -> Tuple[np.ndarray, float]:
+    """
+    Load audio file with proper channel selection for stereo files.
+
+    Parameters
+    ----------
+    file_path : str or Path
+        Path to audio file.
+    sr : int, optional
+        Target sampling rate. If None, uses file's native rate.
+    channel : int, optional
+        Channel to load for stereo files:
+        - 0: Left channel (typically interviewer/console mic)
+        - 1: Right channel (typically participant/subject mic)
+        - None: Mix to mono (average both channels - NOT RECOMMENDED for dual-mic recordings)
+        Default: 0 (left channel)
+    **kwargs
+        Additional arguments passed to librosa.load()
+
+    Returns
+    -------
+    audio : np.ndarray
+        Audio signal (1D array).
+    sr : float
+        Sampling rate.
+
+    Notes
+    -----
+    For dual-microphone recordings where interviewer and participant are on
+    separate channels, ALWAYS specify channel=0 or channel=1 to avoid leakage.
+    Using mono=True averages both channels and causes cross-talk.
+
+    Examples
+    --------
+    >>> # Load interviewer channel (left) from console_mic file
+    >>> audio, sr = load_audio('console_mic_B1.wav', channel=0)
+    >>>
+    >>> # Load participant channel (right)
+    >>> audio, sr = load_audio('console_mic_B1.wav', channel=1)
+    """
+    file_path = Path(file_path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"Audio file not found: {file_path}")
+
+    if channel is None:
+        # Mix to mono (average channels)
+        audio, sr_out = librosa.load(str(file_path), sr=sr, mono=True, **kwargs)
+    else:
+        # Load as stereo, then select channel
+        audio, sr_out = librosa.load(str(file_path), sr=sr, mono=False, **kwargs)
+
+        # Handle mono files (returned as 1D array)
+        if audio.ndim == 1:
+            if channel != 0:
+                raise ValueError(
+                    f"Requested channel {channel} but file is mono (single channel). "
+                    f"Use channel=0 or channel=None."
+                )
+            # Already mono, return as-is
+            pass
+        else:
+            # Stereo (or multi-channel): select requested channel
+            if channel >= audio.shape[0]:
+                raise ValueError(
+                    f"Requested channel {channel} but file has only {audio.shape[0]} channels. "
+                    f"Valid channels: 0-{audio.shape[0]-1}"
+                )
+            audio = audio[channel]
+
+    return audio, sr_out
 
 
 def save_features(
