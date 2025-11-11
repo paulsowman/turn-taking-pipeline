@@ -132,23 +132,12 @@ def load_audio(
     if not file_path.exists():
         raise FileNotFoundError(f"Audio file not found: {file_path}")
 
-    # Extract offset and duration from kwargs if present
-    # We'll handle these AFTER channel selection to avoid librosa mixing channels
-    offset = kwargs.pop('offset', None)
-    duration = kwargs.pop('duration', None)
-
     if channel is None:
         # Mix to mono (average channels)
-        # Pass offset/duration to librosa since we're not doing channel selection
-        if offset is not None:
-            kwargs['offset'] = offset
-        if duration is not None:
-            kwargs['duration'] = duration
         audio, sr_out = librosa.load(str(file_path), sr=sr, mono=True, **kwargs)
     else:
-        # CRITICAL: Load as stereo WITHOUT offset/duration first
-        # Then select channel, THEN apply offset/duration by slicing
-        # This prevents librosa from potentially mixing channels during offset/duration processing
+        # ALTERNATIVE APPROACH: Zero out unwanted channels, then mix to mono
+        # This is more robust than channel selection - ensures no cross-talk
         audio, sr_out = librosa.load(str(file_path), sr=sr, mono=False, **kwargs)
 
         # Handle mono files (returned as 1D array)
@@ -161,22 +150,23 @@ def load_audio(
             # Already mono, return as-is
             pass
         else:
-            # Stereo (or multi-channel): select requested channel
+            # Stereo (or multi-channel): ZERO OUT all channels except the requested one
             if channel >= audio.shape[0]:
                 raise ValueError(
                     f"Requested channel {channel} but file has only {audio.shape[0]} channels. "
                     f"Valid channels: 0-{audio.shape[0]-1}"
                 )
-            audio = audio[channel]
 
-        # Now apply offset and duration by slicing the selected channel
-        if offset is not None or duration is not None:
-            start_sample = int(offset * sr_out) if offset is not None else 0
-            if duration is not None:
-                end_sample = start_sample + int(duration * sr_out)
-                audio = audio[start_sample:end_sample]
-            else:
-                audio = audio[start_sample:]
+            # Zero out all channels except the requested one
+            # This ensures that any mixing will only include the desired channel
+            for i in range(audio.shape[0]):
+                if i != channel:
+                    audio[i, :] = 0.0
+
+            # Now mix to mono - this will average channels but unwanted channels are zeros
+            # For a 2-channel file with channel=0: (ch0 + 0) / 2 = ch0 / 2
+            # We multiply by number of channels to restore amplitude
+            audio = np.sum(audio, axis=0)  # Sum instead of mean to preserve amplitude
 
     return audio, sr_out
 
