@@ -53,6 +53,14 @@ def load_audio(
     """
 ```
 
+**Critical fix (2025-11-11):** When `offset` and `duration` parameters are used with `channel` selection, the function now:
+1. Extracts offset/duration from kwargs
+2. Loads the FULL stereo file with `mono=False`
+3. Selects the requested channel
+4. Applies offset/duration by slicing the numpy array
+
+This prevents librosa from potentially mixing channels during offset/duration extraction. Previously, passing offset/duration to `librosa.load(..., mono=False)` could cause channel mixing.
+
 ### 2. Updated ASR Module (`src/asr/whisper_asr.py`)
 
 **Changes:**
@@ -119,10 +127,23 @@ def extract_prosody_features(
 ### 5. Updated All Verification Scripts
 
 **Scripts updated:**
-- `scripts/verify_sync_alignment.py`: Channel selection for envelope/F0 visualization
-- `scripts/check_f0_word_alignment.py`: Channel selection for F0 statistics
-- `scripts/create_onset_playback.py`: Channel selection for audio playback
+- `scripts/verify_sync_alignment.py`: Channel selection for envelope/F0 visualization + recalculates MEG times
+- `scripts/check_f0_word_alignment.py`: Channel selection for F0 statistics + recalculates MEG times
+- `scripts/create_onset_playback.py`: Channel selection for audio playback + debug output
 - `src/qc/sync_qc.py`: Added helper function with channel selection
+- `scripts/diagnose_audio_channels.py`: NEW - Diagnostic tool to verify channel separation
+
+**Diagnostic Tool:**
+The new `diagnose_audio_channels.py` script helps verify that stereo files have proper channel separation:
+```bash
+python scripts/diagnose_audio_channels.py --subject sub-01 --run 1
+```
+
+This checks:
+- Number of channels in the file
+- RMS power of each channel
+- Whether channels are identical (duplicated mono) or different (true stereo)
+- How librosa handles offset/duration with mono=False
 
 ### 6. Documentation
 
@@ -356,9 +377,43 @@ envelope_meg = 4.20 - (-12.235) = 16.435s  # MATCHES!
 
 Now word onsets align perfectly with audio envelope and F0 contours in all visualization tools.
 
+## librosa offset/duration Channel Mixing Issue (Fixed 2025-11-11)
+
+### Issue Discovered
+Even after fixing channel selection in all modules, the onset playback audio still contained both participants mixed together.
+
+### Root Cause
+When `librosa.load()` is called with BOTH `mono=False` and `offset`/`duration` parameters, librosa may internally mix channels during the offset/duration extraction process. This resulted in:
+```python
+# This caused channel mixing:
+audio, sr = librosa.load(file, sr=None, mono=False, offset=10, duration=30)
+audio_ch0 = audio[0]  # Still has both channels mixed!
+```
+
+### Solution
+Modified `src/utils/io.py::load_audio()` to:
+1. Extract `offset` and `duration` from kwargs
+2. Load FULL stereo file: `librosa.load(file, mono=False)` (no offset/duration)
+3. Select channel: `audio = audio[channel]`
+4. Apply offset/duration by numpy slicing: `audio = audio[start:end]`
+
+This ensures channel selection happens BEFORE any time-based slicing, preventing librosa from mixing channels.
+
+```python
+# New approach (correct):
+audio, sr = librosa.load(file, sr=None, mono=False)  # Load full file
+audio_ch0 = audio[0]  # Select channel first
+audio_ch0 = audio_ch0[start:end]  # Then apply offset/duration
+```
+
+### Files Modified
+- `src/utils/io.py`: Updated `load_audio()` implementation
+- `scripts/create_onset_playback.py`: Added debug output to verify mono audio
+- `scripts/diagnose_audio_channels.py`: Created diagnostic tool
+
 ---
 
 **Status**: ✅ CODE FIXED - Data regeneration required
-**Date**: 2025-11-11 (Updated with verification script fixes)
+**Date**: 2025-11-11 (Updated with offset/duration channel mixing fix)
 **Impact**: All existing transcripts and prosody features invalid
 **Next Steps**: Test on one subject, then batch regenerate all features
