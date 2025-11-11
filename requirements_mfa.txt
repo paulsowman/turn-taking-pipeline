@@ -1,0 +1,12 @@
+# Montreal Forced Aligner (MFA) Requirements
+# Install with: pip install -r requirements_mfa.txt
+
+# Core MFA package
+montreal-forced-aligner>=3.0.0
+
+# TextGrid parsing
+praat-textgrids>=1.4.0
+
+# After installation, download models:
+# mfa model download acoustic english_us_arpa
+# mfa model download dictionary english_us_arpa
