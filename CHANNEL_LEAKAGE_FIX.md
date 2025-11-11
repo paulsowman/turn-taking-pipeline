@@ -311,9 +311,54 @@ done
 - **Backward compatibility**: Default channel=0 ensures new code works correctly; old data must be regenerated
 - **Testing**: Always listen to onset_playback files to verify audio quality before batch processing
 
+## Verification Script Fixes (Added 2025-11-11)
+
+### Issue Discovered
+After fixing the ASR/prosody modules, verification scripts showed envelopes aligned correctly but word onsets were still misaligned by ~24 seconds.
+
+### Root Cause
+The verification scripts were reading `start_meg` and `end_meg` columns from existing `transcript.csv` files. These values were calculated with the OLD (incorrect) formula and stored in the file. When the scripts read these values, they were using incorrect MEG times.
+
+**Example with offset=-12.235s:**
+- Audio time: 4.20s
+- **OLD** (in transcript.csv): `meg_time = 4.20 + (-12.235) = -8.035s` ❌
+- **Envelope** (calculated correctly): `meg_time = 4.20 - (-12.235) = 16.435s` ✓
+- **Misalignment**: 24.47 seconds!
+
+### Scripts Fixed
+
+Both verification scripts now recalculate MEG times from audio times instead of trusting the stored values:
+
+1. **`scripts/verify_sync_alignment.py`**
+   - `load_word_onsets()` function updated
+   - Loads sync_params.json to get offset
+   - Recalculates: `meg_time = audio_time - offset`
+
+2. **`scripts/check_f0_word_alignment.py`**
+   - Same fix applied to `load_word_onsets()` function
+   - Ensures F0 analysis uses correctly aligned word onsets
+
+### Verification
+```python
+# Math verification:
+offset = -12.235s
+audio_time = 4.20s
+
+# OLD (in transcript.csv)
+old_meg_time = 4.20 + (-12.235) = -8.035s  # WRONG!
+
+# NEW (recalculated)
+new_meg_time = 4.20 - (-12.235) = 16.435s  # CORRECT!
+
+# Envelope (always correct)
+envelope_meg = 4.20 - (-12.235) = 16.435s  # MATCHES!
+```
+
+Now word onsets align perfectly with audio envelope and F0 contours in all visualization tools.
+
 ---
 
 **Status**: ✅ CODE FIXED - Data regeneration required
-**Date**: 2025-11-11
+**Date**: 2025-11-11 (Updated with verification script fixes)
 **Impact**: All existing transcripts and prosody features invalid
 **Next Steps**: Test on one subject, then batch regenerate all features
