@@ -42,9 +42,19 @@ except ImportError:
 
 
 def load_word_onsets(subject, run, base_dir):
-    """Load word onset times from transcript."""
+    """Load word onset times from transcript and recalculate MEG times."""
     feature_dir = base_dir / "outputs" / "features" / subject / f"run-{run:02d}"
     transcript = pd.read_csv(feature_dir / "transcript.csv")
+
+    # Load sync offset to recalculate MEG times
+    # (Don't trust the start_meg/end_meg in the file - may be calculated with old formula)
+    sync_dir = base_dir / "outputs" / "sync" / subject / f"run-{run:02d}"
+    sync_params_file = sync_dir / "sync_params.json"
+
+    with open(sync_params_file, 'r') as f:
+        sync_params = json.load(f)
+
+    sync_offset = sync_params['initial_offset_s']
 
     # Extract all word onsets with their MEG-aligned times
     word_onsets = []
@@ -53,17 +63,15 @@ def load_word_onsets(subject, run, base_dir):
             continue
 
         words_data = eval(seg['words']) if isinstance(seg['words'], str) else seg['words']
-        seg_start_meg = seg['start_meg']
-        seg_start_orig = seg['start']
 
         for w in words_data:
-            word_time_orig = w['start']
-            # CORRECTED: meg_time = audio_time + offset
-            # The offset is already baked into seg_start_meg
-            word_time_meg = seg_start_meg + (word_time_orig - seg_start_orig)
+            word_time_audio = w['start']
+            # CORRECT formula: meg_time = audio_time - offset
+            # This accounts for the REVERSED sign convention in sync function
+            word_time_meg = word_time_audio - sync_offset
             word_onsets.append({
                 'time_meg': word_time_meg,
-                'time_audio': word_time_orig,
+                'time_audio': word_time_audio,
                 'word': w['word']
             })
 
