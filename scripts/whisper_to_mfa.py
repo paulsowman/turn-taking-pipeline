@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 import argparse
 import pandas as pd
+import numpy as np
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
