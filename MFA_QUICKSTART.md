@@ -19,17 +19,44 @@ This guide shows you how to use MFA to get precise word timing (±10-20ms) inste
 - Phrase-level timing (>200ms scale)
 - Exploratory analysis
 
-## Installation (pip-based)
+## Installation
+
+### Option A: Conda (RECOMMENDED - Most Reliable)
+
+MFA has compiled dependencies (Kaldi/kalpy) that work best with conda:
 
 ```bash
-# 1. Install MFA and dependencies
+# 1. Create MFA environment
+conda create -n mfa -c conda-forge montreal-forced-aligner python=3.10
+
+# 2. Activate environment
+conda activate mfa
+
+# 3. Download English acoustic model and pronunciation dictionary
+mfa model download acoustic english_us_arpa
+mfa model download dictionary english_us_arpa
+
+# 4. Verify installation
+mfa version
+```
+
+**Pros**: Reliable, handles native dependencies automatically, well-tested
+
+**Cons**: Requires conda, separate environment from main pipeline
+
+### Option B: Pip (Alternative - May Have Issues)
+
+If you prefer pip or can't use conda:
+
+```bash
+# 1. Install MFA v2.2.17 (more pip-compatible than v3.x)
 pip install -r requirements_mfa.txt
 
 # This installs:
-#   - montreal-forced-aligner>=3.0.0
+#   - montreal-forced-aligner==2.2.17
 #   - praat-textgrids>=1.4.0
 
-# 2. Download English acoustic model and pronunciation dictionary
+# 2. Download models
 mfa model download acoustic english_us_arpa
 mfa model download dictionary english_us_arpa
 
@@ -37,7 +64,11 @@ mfa model download dictionary english_us_arpa
 mfa version
 ```
 
-**Note**: No conda required! Everything works with pip.
+**Pros**: No conda needed, same environment as pipeline
+
+**Cons**: May fail with kalpy compilation errors (especially Python 3.13)
+
+**Troubleshooting**: If you get `ModuleNotFoundError: No module named '_kalpy'`, use conda instead.
 
 ## Usage Workflow
 
@@ -69,10 +100,26 @@ This creates:
 
 ### Step 3: Run MFA Alignment
 
+**If using conda** (recommended):
 ```bash
-# Single subject/run
+# Activate MFA environment
+conda activate mfa
+
+# Run alignment
 python scripts/run_mfa_alignment.py --subject sub-01 --run 1
 
+# Deactivate when done
+conda deactivate
+```
+
+**If using pip** (same venv):
+```bash
+# Just run directly
+python scripts/run_mfa_alignment.py --subject sub-01 --run 1
+```
+
+**Additional options**:
+```bash
 # Multiple runs
 python scripts/run_mfa_alignment.py --subject sub-01 --runs 1 2 3 4 5
 
@@ -209,11 +256,38 @@ print(large_errors[['word', 'time_diff']].head(10))
 
 ## Troubleshooting
 
+### Error: ModuleNotFoundError: No module named '_kalpy'
+
+This is the most common issue with pip installation. The kalpy package (which wraps Kaldi) failed to compile.
+
+**Solutions**:
+
+1. **Use conda instead** (RECOMMENDED):
+   ```bash
+   # Uninstall pip version
+   pip uninstall montreal-forced-aligner -y
+
+   # Install with conda
+   conda create -n mfa -c conda-forge montreal-forced-aligner python=3.10
+   conda activate mfa
+   ```
+
+2. **Try MFA v2.2.17** (if you must use pip):
+   ```bash
+   pip uninstall montreal-forced-aligner kalpy -y
+   pip install montreal-forced-aligner==2.2.17 praat-textgrids
+   ```
+
+3. **Check Python version**: MFA works best with Python 3.8-3.11. Python 3.13 has compatibility issues.
+
 ### MFA not found
 
 ```bash
 # Make sure it's installed
-pip install montreal-forced-aligner
+pip install montreal-forced-aligner==2.2.17
+
+# Or with conda
+conda install -c conda-forge montreal-forced-aligner
 
 # Verify
 mfa version
