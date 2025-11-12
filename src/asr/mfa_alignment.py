@@ -90,7 +90,7 @@ def check_mfa_installed() -> bool:
             ['mfa', 'version'],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=30  # MFA v3.x can be slow to start on macOS
         )
         if result.returncode == 0:
             version = result.stdout.strip()
@@ -125,7 +125,7 @@ def check_mfa_models(
             ['mfa', 'model', 'inspect', 'acoustic', acoustic_model],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30  # MFA v3.x can be slow to start on macOS
         )
         acoustic_available = result.returncode == 0
 
@@ -134,7 +134,7 @@ def check_mfa_models(
             ['mfa', 'model', 'inspect', 'dictionary', dictionary],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30  # MFA v3.x can be slow to start on macOS
         )
         dictionary_available = result.returncode == 0
 
