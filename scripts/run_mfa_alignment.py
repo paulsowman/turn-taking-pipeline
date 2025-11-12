@@ -29,6 +29,7 @@ import sys
 from pathlib import Path
 import argparse
 import pandas as pd
+import numpy as np
 import json
 
 # Add src to path
