@@ -1,8 +1,15 @@
 # Montreal Forced Aligner (MFA) Requirements
 # Install with: pip install -r requirements_mfa.txt
 
-# Core MFA package
-montreal-forced-aligner>=3.0.0
+# IMPORTANT: MFA v3.x has kalpy dependency issues with pip
+# Two installation options:
+
+# Option A: Use conda (RECOMMENDED - most reliable)
+#   conda create -n mfa -c conda-forge montreal-forced-aligner
+#   conda activate mfa
+
+# Option B: Use pip with MFA v2.x (more compatible with pip)
+montreal-forced-aligner==2.2.17
 
 # TextGrid parsing
 praat-textgrids>=1.4.0
@@ -10,3 +17,6 @@ praat-textgrids>=1.4.0
 # After installation, download models:
 # mfa model download acoustic english_us_arpa
 # mfa model download dictionary english_us_arpa
+
+# Note: If you get kalpy errors with pip, use conda instead.
+
