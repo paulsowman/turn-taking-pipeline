@@ -184,6 +184,8 @@ def main():
                 })
             except Exception as e:
                 print(f"✗ Error converting {subject} run-{run}: {e}")
+                import traceback
+                traceback.print_exc()
                 results.append({
                     'subject': subject,
                     'run': run,
