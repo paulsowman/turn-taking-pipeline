@@ -13,7 +13,7 @@ Predictors added:
 - MISC_word_onsets: Delta functions at MFA word onsets
 - MISC_surprisal: Delta functions weighted by GPT-2 surprisal
 - MISC_duration: Delta functions weighted by word duration
-- MISC_speaker: Categorical (0=silence, 1=interviewer, 2=participant)
+- MISC_speaker: Categorical (0=silence, 1=interviewer, 2=participant, 3=overlap)
 
 Usage:
     # Single subject/run
@@ -303,6 +303,7 @@ def process_subject_run(
                 'pct_silence': float(100 * np.sum(speaker == 0) / len(speaker)),
                 'pct_interviewer': float(100 * np.sum(speaker == 1) / len(speaker)),
                 'pct_participant': float(100 * np.sum(speaker == 2) / len(speaker)),
+                'pct_overlap': float(100 * np.sum(speaker == 3) / len(speaker)),
             },
         },
     }

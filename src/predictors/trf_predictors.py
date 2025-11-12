@@ -245,10 +245,11 @@ def create_speaker_predictor(
     env_interviewer: np.ndarray,
     env_participant: np.ndarray,
     threshold_db: float = 6.0,
+    silence_threshold: float = 0.01,
     min_duration_samples: int = 50,
 ) -> np.ndarray:
     """
-    Create speaker predictor based on envelope energy ratio.
+    Create speaker predictor based on envelope energy.
 
     Parameters
     ----------
@@ -257,45 +258,60 @@ def create_speaker_predictor(
     env_participant : np.ndarray
         Participant envelope at MEG sampling rate
     threshold_db : float
-        Energy difference threshold (dB) for speaker detection
+        Energy difference threshold (dB) for single-speaker detection
+    silence_threshold : float
+        Energy threshold for silence detection (RMS amplitude)
     min_duration_samples : int
         Minimum duration for speaker segments (samples)
 
     Returns
     -------
     speaker : np.ndarray
-        Speaker labels: 0=silence, 1=interviewer, 2=participant
+        Speaker labels: 0=silence, 1=interviewer, 2=participant, 3=overlap
     """
-    # Compute energy ratio in dB
+    # Compute energy ratio in dB (for single-speaker detection)
     ratio_db = 10 * np.log10((env_interviewer + 1e-10) / (env_participant + 1e-10))
+
+    # Detect silence (both channels low)
+    is_silence = (env_interviewer < silence_threshold) & (env_participant < silence_threshold)
 
     # Initial classification
     speaker = np.zeros(len(ratio_db), dtype=int)
-    speaker[ratio_db > threshold_db] = 1  # Interviewer
-    speaker[ratio_db < -threshold_db] = 2  # Participant
-    # speaker == 0 when |ratio_db| < threshold_db (silence or overlap)
+
+    # Silence
+    speaker[is_silence] = 0
+
+    # Single speakers (when one is clearly louder)
+    speaker[(~is_silence) & (ratio_db > threshold_db)] = 1  # Interviewer
+    speaker[(~is_silence) & (ratio_db < -threshold_db)] = 2  # Participant
+
+    # Overlap (both speaking: not silence, and ratio within threshold)
+    speaker[(~is_silence) & (np.abs(ratio_db) <= threshold_db)] = 3
 
     # Remove brief segments (morphological opening)
     if min_duration_samples > 1:
         from scipy.ndimage import binary_opening
         kernel = np.ones(min_duration_samples)
 
-        # Process each speaker separately
-        for label in [1, 2]:
+        # Process each speaker category separately
+        for label in [1, 2, 3]:
             mask = speaker == label
             mask_cleaned = binary_opening(mask, structure=kernel)
-            speaker[mask & ~mask_cleaned] = 0  # Remove brief segments
+            # Remove brief segments - revert to silence
+            speaker[mask & ~mask_cleaned] = 0
 
     # Statistics
     n_silence = np.sum(speaker == 0)
     n_interviewer = np.sum(speaker == 1)
     n_participant = np.sum(speaker == 2)
+    n_overlap = np.sum(speaker == 3)
     total = len(speaker)
 
     logger.info(f"Created speaker predictor:")
     logger.info(f"  Silence:      {100*n_silence/total:5.1f}% ({n_silence} samples)")
     logger.info(f"  Interviewer:  {100*n_interviewer/total:5.1f}% ({n_interviewer} samples)")
     logger.info(f"  Participant:  {100*n_participant/total:5.1f}% ({n_participant} samples)")
+    logger.info(f"  Overlap:      {100*n_overlap/total:5.1f}% ({n_overlap} samples)")
 
     return speaker
 
