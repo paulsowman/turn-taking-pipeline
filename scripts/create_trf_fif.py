@@ -5,16 +5,19 @@ Create TRF Analysis FIF Files
 Adds TRF predictor time series as MISC channels to MEG .fif files.
 All predictors are at MEG sampling rate (1000 Hz) in MEG timebase.
 
-Predictors added:
+Predictors added (13 total):
 - MISC_envelope_interviewer: Interviewer audio envelope (external)
 - MISC_envelope_participant: Participant audio envelope (external)
 - MISC_envelope_meg_mic7: MEG MISC 007 envelope (for sync verification)
 - MISC_envelope_meg_mic8: MEG MISC 008 envelope (for sync verification)
 - MISC_f0_interviewer: Interviewer F0 contour
 - MISC_f0_participant: Participant F0 contour
-- MISC_word_onsets: Delta functions at MFA word onsets
-- MISC_surprisal: Delta functions weighted by GPT-2 surprisal
-- MISC_duration: Delta functions weighted by word duration
+- MISC_word_onsets_interviewer: Delta functions at interviewer word onsets
+- MISC_word_onsets_participant: Delta functions at participant word onsets
+- MISC_surprisal_interviewer: Delta functions weighted by interviewer word surprisal
+- MISC_surprisal_participant: Delta functions weighted by participant word surprisal
+- MISC_duration_interviewer: Delta functions weighted by interviewer word duration
+- MISC_duration_participant: Delta functions weighted by participant word duration
 - MISC_speaker: Categorical (0=silence, 1=interviewer, 2=participant, 3=overlap)
 
 Usage:
@@ -171,99 +174,154 @@ def process_subject_run(
         print(f"  ⚠ WARNING: Participant audio appears to be silent (RMS={participant_rms:.2e})")
         print(f"  This may indicate a channel selection issue or zeroed-out audio.")
 
-    # Load MFA word timing
-    print("\nLoading MFA word timing...")
+    # Load MFA word timing (both speakers)
+    print("\nLoading MFA word timing (dual-speaker)...")
     feature_dir = base_dir / "outputs" / "features" / subject / f"run-{run:02d}"
-    mfa_file = feature_dir / "transcript_mfa.csv"
+    mfa_interviewer_file = feature_dir / "transcript_mfa_interviewer.csv"
+    mfa_participant_file = feature_dir / "transcript_mfa_participant.csv"
 
-    if not mfa_file.exists():
-        print(f"✗ MFA transcript not found: {mfa_file}")
+    if not mfa_interviewer_file.exists():
+        print(f"✗ Interviewer MFA transcript not found: {mfa_interviewer_file}")
         print(f"  Run: python scripts/run_mfa_alignment.py --subject {subject} --run {run}")
         return False
 
-    mfa_df = pd.read_csv(mfa_file)
-    print(f"  Words: {len(mfa_df)}")
+    if not mfa_participant_file.exists():
+        print(f"✗ Participant MFA transcript not found: {mfa_participant_file}")
+        print(f"  Run: python scripts/run_mfa_alignment.py --subject {subject} --run {run}")
+        return False
 
-    # Extract word data
-    word_times_meg = mfa_df['start_meg'].values if 'start_meg' in mfa_df else (mfa_df['start'].values - sync_offset)
-    word_durations = mfa_df['duration'].values
-    words = mfa_df['word'].tolist()
+    mfa_interviewer_df = pd.read_csv(mfa_interviewer_file)
+    mfa_participant_df = pd.read_csv(mfa_participant_file)
+    print(f"  Interviewer words: {len(mfa_interviewer_df)}")
+    print(f"  Participant words: {len(mfa_participant_df)}")
+
+    # Extract word data for interviewer
+    word_times_interviewer_meg = (
+        mfa_interviewer_df['start_meg'].values if 'start_meg' in mfa_interviewer_df
+        else (mfa_interviewer_df['start'].values - sync_offset)
+    )
+    word_durations_interviewer = mfa_interviewer_df['duration'].values
+    words_interviewer = mfa_interviewer_df['word'].tolist()
+
+    # Extract word data for participant
+    word_times_participant_meg = (
+        mfa_participant_df['start_meg'].values if 'start_meg' in mfa_participant_df
+        else (mfa_participant_df['start'].values - sync_offset)
+    )
+    word_durations_participant = mfa_participant_df['duration'].values
+    words_participant = mfa_participant_df['word'].tolist()
 
     # Create predictors
     print("\nCreating predictors...")
 
     # 1. External audio envelopes
-    print("  1/10: Envelope (interviewer, external)...")
+    print("  1/13: Envelope (interviewer, external)...")
     env_interviewer = create_envelope_predictor(
         audio_interviewer, sr, meg_times, sync_offset
     )
 
-    print("  2/10: Envelope (participant, external)...")
+    print("  2/13: Envelope (participant, external)...")
     env_participant = create_envelope_predictor(
         audio_participant, sr, meg_times, sync_offset
     )
 
     # 2. MEG-recorded audio envelopes (for sync verification)
-    print("  3/10: Envelope (MEG MIC 7)...")
+    print("  3/13: Envelope (MEG MIC 7)...")
     env_meg_mic7 = create_meg_audio_envelope(meg_raw, 'MISC 007')
 
-    print("  4/10: Envelope (MEG MIC 8)...")
+    print("  4/13: Envelope (MEG MIC 8)...")
     env_meg_mic8 = create_meg_audio_envelope(meg_raw, 'MISC 008')
 
     # 3. F0 (normalized to 0-1)
-    print("  5/10: F0 (interviewer)...")
+    print("  5/13: F0 (interviewer)...")
     f0_interviewer = create_f0_predictor(
         audio_interviewer, sr, meg_times, sync_offset, normalize=True
     )
 
-    print("  6/10: F0 (participant)...")
+    print("  6/13: F0 (participant)...")
     f0_participant = create_f0_predictor(
         audio_participant, sr, meg_times, sync_offset, normalize=True
     )
 
-    # 4. Word onsets
-    print("  7/10: Word onsets...")
-    word_onsets = create_word_onset_predictor(word_times_meg, meg_times)
+    # 4. Word onsets (speaker-specific)
+    print("  7/13: Word onsets (interviewer)...")
+    word_onsets_interviewer = create_word_onset_predictor(word_times_interviewer_meg, meg_times)
 
-    # 5. Surprisal (normalized to 0-1)
-    surprisal_raw_stats = None
+    print("  8/13: Word onsets (participant)...")
+    word_onsets_participant = create_word_onset_predictor(word_times_participant_meg, meg_times)
+
+    # 5. Surprisal (normalized to 0-1, speaker-specific)
+    surprisal_interviewer_raw_stats = None
+    surprisal_participant_raw_stats = None
     if compute_surprisal_flag:
-        print("  8/10: Surprisal (GPT-2, this may take a few minutes)...")
+        print("  9/13: Surprisal (interviewer, GPT-2)...")
         try:
-            surprisal_values = compute_word_surprisal(words)
+            surprisal_values_interviewer = compute_word_surprisal(words_interviewer)
             # Save raw statistics before normalization
-            surprisal_raw_stats = {
-                'mean': float(np.mean(surprisal_values)),
-                'std': float(np.std(surprisal_values)),
-                'min': float(surprisal_values.min()),
-                'max': float(surprisal_values.max()),
+            surprisal_interviewer_raw_stats = {
+                'mean': float(np.mean(surprisal_values_interviewer)),
+                'std': float(np.std(surprisal_values_interviewer)),
+                'min': float(surprisal_values_interviewer.min()),
+                'max': float(surprisal_values_interviewer.max()),
             }
-            surprisal = create_surprisal_predictor(
-                word_times_meg, surprisal_values, meg_times, normalize=True
+            surprisal_interviewer = create_surprisal_predictor(
+                word_times_interviewer_meg, surprisal_values_interviewer, meg_times, normalize=True
             )
         except Exception as e:
-            print(f"  ⚠ Warning: Surprisal computation failed: {e}")
+            print(f"  ⚠ Warning: Interviewer surprisal computation failed: {e}")
             print(f"  Creating zero surprisal predictor")
-            surprisal = np.zeros(len(meg_times))
-    else:
-        print("  8/10: Surprisal (skipped, using zeros)...")
-        surprisal = np.zeros(len(meg_times))
+            surprisal_interviewer = np.zeros(len(meg_times))
 
-    # 6. Duration (normalized to 0-1)
-    print("  9/10: Duration...")
+        print("  10/13: Surprisal (participant, GPT-2)...")
+        try:
+            surprisal_values_participant = compute_word_surprisal(words_participant)
+            # Save raw statistics before normalization
+            surprisal_participant_raw_stats = {
+                'mean': float(np.mean(surprisal_values_participant)),
+                'std': float(np.std(surprisal_values_participant)),
+                'min': float(surprisal_values_participant.min()),
+                'max': float(surprisal_values_participant.max()),
+            }
+            surprisal_participant = create_surprisal_predictor(
+                word_times_participant_meg, surprisal_values_participant, meg_times, normalize=True
+            )
+        except Exception as e:
+            print(f"  ⚠ Warning: Participant surprisal computation failed: {e}")
+            print(f"  Creating zero surprisal predictor")
+            surprisal_participant = np.zeros(len(meg_times))
+    else:
+        print("  9/13: Surprisal (interviewer, skipped)...")
+        surprisal_interviewer = np.zeros(len(meg_times))
+        print("  10/13: Surprisal (participant, skipped)...")
+        surprisal_participant = np.zeros(len(meg_times))
+
+    # 6. Duration (normalized to 0-1, speaker-specific)
+    print("  11/13: Duration (interviewer)...")
     # Save raw statistics before normalization
-    duration_raw_stats = {
-        'mean_ms': float(np.mean(word_durations) * 1000),
-        'std_ms': float(np.std(word_durations) * 1000),
-        'min_ms': float(word_durations.min() * 1000),
-        'max_ms': float(word_durations.max() * 1000),
+    duration_interviewer_raw_stats = {
+        'mean_ms': float(np.mean(word_durations_interviewer) * 1000),
+        'std_ms': float(np.std(word_durations_interviewer) * 1000),
+        'min_ms': float(word_durations_interviewer.min() * 1000),
+        'max_ms': float(word_durations_interviewer.max() * 1000),
     }
-    duration = create_duration_predictor(
-        word_times_meg, word_durations, meg_times, normalize=True
+    duration_interviewer = create_duration_predictor(
+        word_times_interviewer_meg, word_durations_interviewer, meg_times, normalize=True
+    )
+
+    print("  12/13: Duration (participant)...")
+    # Save raw statistics before normalization
+    duration_participant_raw_stats = {
+        'mean_ms': float(np.mean(word_durations_participant) * 1000),
+        'std_ms': float(np.std(word_durations_participant) * 1000),
+        'min_ms': float(word_durations_participant.min() * 1000),
+        'max_ms': float(word_durations_participant.max() * 1000),
+    }
+    duration_participant = create_duration_predictor(
+        word_times_participant_meg, word_durations_participant, meg_times, normalize=True
     )
 
     # 7. Speaker
-    print("  10/10: Speaker...")
+    print("  13/13: Speaker...")
     speaker = create_speaker_predictor(env_interviewer, env_participant)
 
     # Create info for new channels
@@ -275,9 +333,12 @@ def process_subject_run(
         'MISC_envelope_meg_mic8',
         'MISC_f0_interviewer',
         'MISC_f0_participant',
-        'MISC_word_onsets',
-        'MISC_surprisal',
-        'MISC_duration',
+        'MISC_word_onsets_interviewer',
+        'MISC_word_onsets_participant',
+        'MISC_surprisal_interviewer',
+        'MISC_surprisal_participant',
+        'MISC_duration_interviewer',
+        'MISC_duration_participant',
         'MISC_speaker',
     ]
 
@@ -291,9 +352,12 @@ def process_subject_run(
         env_meg_mic8,
         f0_interviewer,
         f0_participant,
-        word_onsets,
-        surprisal,
-        duration,
+        word_onsets_interviewer,
+        word_onsets_participant,
+        surprisal_interviewer,
+        surprisal_participant,
+        duration_interviewer,
+        duration_participant,
         speaker.astype(float),
     ])
 
@@ -321,7 +385,9 @@ def process_subject_run(
     metadata = {
         'subject': subject,
         'run': run,
-        'n_words': len(words),
+        'n_words_interviewer': len(words_interviewer),
+        'n_words_participant': len(words_participant),
+        'n_words_total': len(words_interviewer) + len(words_participant),
         'sync_offset_s': sync_offset,
         'meg_sfreq': meg_sfreq,
         'meg_duration_s': float(meg_times[-1]),
@@ -362,21 +428,37 @@ def process_subject_run(
                 'normalized': True,
                 'note': 'Voiced F0 normalized to 0-1, unvoiced remains 0',
             },
-            'word_onsets': {
-                'n_onsets': int(np.sum(word_onsets > 0)),
+            'word_onsets_interviewer': {
+                'n_onsets': int(np.sum(word_onsets_interviewer > 0)),
                 'normalized': False,
-                'note': 'Binary delta functions (0 or 1)',
+                'note': 'Binary delta functions (0 or 1) for interviewer words',
             },
-            'surprisal': {
+            'word_onsets_participant': {
+                'n_onsets': int(np.sum(word_onsets_participant > 0)),
+                'normalized': False,
+                'note': 'Binary delta functions (0 or 1) for participant words',
+            },
+            'surprisal_interviewer': {
                 'computed': compute_surprisal_flag,
                 'normalized': True,
-                'raw_stats': surprisal_raw_stats if surprisal_raw_stats else None,
+                'raw_stats': surprisal_interviewer_raw_stats if surprisal_interviewer_raw_stats else None,
                 'note': 'GPT-2 surprisal in nats, normalized to 0-1' if compute_surprisal_flag else 'Not computed (zeros)',
             },
-            'duration': {
+            'surprisal_participant': {
+                'computed': compute_surprisal_flag,
                 'normalized': True,
-                'raw_stats': duration_raw_stats,
-                'note': 'Word durations normalized to 0-1',
+                'raw_stats': surprisal_participant_raw_stats if surprisal_participant_raw_stats else None,
+                'note': 'GPT-2 surprisal in nats, normalized to 0-1' if compute_surprisal_flag else 'Not computed (zeros)',
+            },
+            'duration_interviewer': {
+                'normalized': True,
+                'raw_stats': duration_interviewer_raw_stats,
+                'note': 'Interviewer word durations normalized to 0-1',
+            },
+            'duration_participant': {
+                'normalized': True,
+                'raw_stats': duration_participant_raw_stats,
+                'note': 'Participant word durations normalized to 0-1',
             },
             'speaker': {
                 'pct_silence': float(100 * np.sum(speaker == 0) / len(speaker)),

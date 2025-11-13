@@ -43,6 +43,7 @@ ALL_SUBJECTS = [
 def convert_subject_run(subject: str, run: int, base_dir: Path, config: dict) -> bool:
     """
     Convert one subject/run Whisper transcript to MFA format.
+    Creates separate MFA inputs for both interviewer and participant.
 
     Parameters
     ----------
@@ -60,55 +61,97 @@ def convert_subject_run(subject: str, run: int, base_dir: Path, config: dict) ->
     success : bool
     """
     print(f"\n{'='*70}")
-    print(f"Converting {subject} run-{run:02d}")
+    print(f"Converting {subject} run-{run:02d} (DUAL-SPEAKER)")
     print(f"{'='*70}\n")
 
-    # Load transcript
-    transcript_path = base_dir / "outputs" / "features" / subject / f"run-{run:02d}" / "transcript.csv"
+    # Load transcripts
+    features_dir = base_dir / "outputs" / "features" / subject / f"run-{run:02d}"
+    transcript_interviewer_path = features_dir / "transcript_interviewer.csv"
+    transcript_participant_path = features_dir / "transcript_participant.csv"
 
-    if not transcript_path.exists():
-        print(f"  ✗ Transcript not found: {transcript_path}")
+    if not transcript_interviewer_path.exists():
+        print(f"  ✗ Interviewer transcript not found: {transcript_interviewer_path}")
         return False
 
-    transcript = pd.read_csv(transcript_path)
-    print(f"  Segments: {len(transcript)}")
-    print(f"  Total words: {sum(len(eval(seg['words']) if isinstance(seg['words'], str) else seg['words']) for _, seg in transcript.iterrows() if not pd.isna(seg['words']))}")
+    if not transcript_participant_path.exists():
+        print(f"  ✗ Participant transcript not found: {transcript_participant_path}")
+        return False
 
-    # Prepare output directories
-    mfa_dir = base_dir / "outputs" / "mfa" / subject / f"run-{run:02d}"
-    mfa_dir.mkdir(parents=True, exist_ok=True)
+    transcript_interviewer = pd.read_csv(transcript_interviewer_path)
+    transcript_participant = pd.read_csv(transcript_participant_path)
+
+    print(f"  Interviewer:")
+    print(f"    Segments: {len(transcript_interviewer)}")
+    print(f"    Total words: {sum(len(eval(seg['words']) if isinstance(seg['words'], str) else seg['words']) for _, seg in transcript_interviewer.iterrows() if not pd.isna(seg['words']))}")
+
+    print(f"  Participant:")
+    print(f"    Segments: {len(transcript_participant)}")
+    print(f"    Total words: {sum(len(eval(seg['words']) if isinstance(seg['words'], str) else seg['words']) for _, seg in transcript_participant.iterrows() if not pd.isna(seg['words']))}")
+
+    # Prepare output directories for both speakers
+    mfa_dir_interviewer = base_dir / "outputs" / "mfa" / subject / f"run-{run:02d}" / "interviewer"
+    mfa_dir_participant = base_dir / "outputs" / "mfa" / subject / f"run-{run:02d}" / "participant"
+    mfa_dir_interviewer.mkdir(parents=True, exist_ok=True)
+    mfa_dir_participant.mkdir(parents=True, exist_ok=True)
+
+    # Get audio paths
+    paths = get_subject_paths(subject, run, config)
+    audio_interviewer_src = paths['external_audio_interviewer']
+    audio_participant_src = paths['external_audio_participant']
+
+    # --- INTERVIEWER ---
+    print(f"\n  Processing INTERVIEWER:")
 
     # Convert to MFA text format
-    text_file = mfa_dir / f"{subject}_run-{run:02d}.txt"
-    whisper_to_mfa_text(transcript, text_file, segments_only=False)
+    text_file_interviewer = mfa_dir_interviewer / f"{subject}_run-{run:02d}_interviewer.txt"
+    whisper_to_mfa_text(transcript_interviewer, text_file_interviewer, segments_only=False)
 
-    # Also copy/link audio file to MFA directory
-    # MFA expects audio and text in same directory (or specify separately)
-    paths = get_subject_paths(subject, run, config)
-    audio_src = paths['external_audio_interviewer']
+    # Link/copy audio file
+    if audio_interviewer_src.exists():
+        audio_dst_interviewer = mfa_dir_interviewer / f"{subject}_run-{run:02d}_interviewer.wav"
 
-    if audio_src.exists():
-        audio_dst = mfa_dir / f"{subject}_run-{run:02d}.wav"
-
-        # Create symlink to save disk space
-        if audio_dst.exists() or audio_dst.is_symlink():
-            audio_dst.unlink()
+        if audio_dst_interviewer.exists() or audio_dst_interviewer.is_symlink():
+            audio_dst_interviewer.unlink()
 
         try:
-            audio_dst.symlink_to(audio_src.resolve())
-            print(f"  ✓ Linked audio: {audio_dst.name} → {audio_src}")
+            audio_dst_interviewer.symlink_to(audio_interviewer_src.resolve())
+            print(f"    ✓ Linked audio: {audio_dst_interviewer.name} → {audio_interviewer_src}")
         except OSError:
-            # If symlink fails, copy file
             import shutil
-            shutil.copy2(audio_src, audio_dst)
-            print(f"  ✓ Copied audio: {audio_dst.name}")
+            shutil.copy2(audio_interviewer_src, audio_dst_interviewer)
+            print(f"    ✓ Copied audio: {audio_dst_interviewer.name}")
     else:
-        print(f"  ✗ Audio file not found: {audio_src}")
+        print(f"    ✗ Audio file not found: {audio_interviewer_src}")
         return False
 
-    print(f"\n  ✓ MFA input prepared:")
-    print(f"    Audio: {audio_dst}")
-    print(f"    Text: {text_file}")
+    # --- PARTICIPANT ---
+    print(f"\n  Processing PARTICIPANT:")
+
+    # Convert to MFA text format
+    text_file_participant = mfa_dir_participant / f"{subject}_run-{run:02d}_participant.txt"
+    whisper_to_mfa_text(transcript_participant, text_file_participant, segments_only=False)
+
+    # Link/copy audio file
+    if audio_participant_src.exists():
+        audio_dst_participant = mfa_dir_participant / f"{subject}_run-{run:02d}_participant.wav"
+
+        if audio_dst_participant.exists() or audio_dst_participant.is_symlink():
+            audio_dst_participant.unlink()
+
+        try:
+            audio_dst_participant.symlink_to(audio_participant_src.resolve())
+            print(f"    ✓ Linked audio: {audio_dst_participant.name} → {audio_participant_src}")
+        except OSError:
+            import shutil
+            shutil.copy2(audio_participant_src, audio_dst_participant)
+            print(f"    ✓ Copied audio: {audio_dst_participant.name}")
+    else:
+        print(f"    ✗ Audio file not found: {audio_participant_src}")
+        return False
+
+    print(f"\n  ✓ MFA input prepared for BOTH speakers:")
+    print(f"    Interviewer: {mfa_dir_interviewer}")
+    print(f"    Participant: {mfa_dir_participant}")
 
     return True
 

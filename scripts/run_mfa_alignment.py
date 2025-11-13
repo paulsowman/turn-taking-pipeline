@@ -56,6 +56,79 @@ ALL_SUBJECTS = [
 ]
 
 
+def process_speaker_mfa(
+    speaker: str,
+    mfa_speaker_dir: Path,
+    acoustic_model: str,
+    dictionary: str,
+    num_jobs: int,
+) -> tuple:
+    """
+    Run MFA alignment for one speaker.
+
+    Parameters
+    ----------
+    speaker : str
+        'interviewer' or 'participant'
+    mfa_speaker_dir : Path
+        Directory with speaker-specific audio and text files
+    acoustic_model : str
+        MFA acoustic model name
+    dictionary : str
+        MFA dictionary name
+    num_jobs : int
+        Number of parallel jobs
+
+    Returns
+    -------
+    words_df, phones_df : tuple of DataFrames
+        Word and phone alignments (audio timebase)
+    """
+    print(f"\n  === {speaker.upper()} ===")
+
+    # Check for input files
+    audio_files = list(mfa_speaker_dir.glob("*.wav"))
+    text_files = list(mfa_speaker_dir.glob("*.txt"))
+
+    if len(audio_files) == 0:
+        raise ValueError(f"No audio files in {mfa_speaker_dir}")
+
+    if len(text_files) == 0:
+        raise ValueError(f"No text files in {mfa_speaker_dir}")
+
+    print(f"  Found {len(audio_files)} audio files, {len(text_files)} text files")
+
+    # Run MFA alignment
+    output_dir = mfa_speaker_dir / "textgrids"
+    output_dir.mkdir(exist_ok=True)
+
+    success = run_mfa_alignment(
+        audio_dir=mfa_speaker_dir,
+        text_dir=mfa_speaker_dir,
+        output_dir=output_dir,
+        acoustic_model=acoustic_model,
+        dictionary=dictionary,
+        num_jobs=num_jobs,
+        clean=True,
+    )
+
+    if not success:
+        raise RuntimeError(f"MFA alignment failed for {speaker}")
+
+    # Parse TextGrid output
+    textgrid_files = list(output_dir.glob("*.TextGrid"))
+    if len(textgrid_files) == 0:
+        raise ValueError(f"No TextGrid files generated for {speaker}")
+
+    textgrid_file = textgrid_files[0]
+    print(f"  Parsing TextGrid: {textgrid_file.name}")
+
+    words_df, phones_df = parse_textgrid(textgrid_file)
+    print(f"  ✓ {len(words_df)} words, {len(phones_df)} phones")
+
+    return words_df, phones_df
+
+
 def process_subject_run(
     subject: str,
     run: int,
@@ -66,7 +139,7 @@ def process_subject_run(
     compare_timing: bool = True,
 ) -> bool:
     """
-    Run MFA alignment for one subject/run.
+    Run MFA alignment for one subject/run on both speakers.
 
     Parameters
     ----------
@@ -90,62 +163,44 @@ def process_subject_run(
     success : bool
     """
     print(f"\n{'='*70}")
-    print(f"MFA ALIGNMENT: {subject} run-{run:02d}")
+    print(f"MFA ALIGNMENT (DUAL-SPEAKER): {subject} run-{run:02d}")
     print(f"{'='*70}\n")
 
     mfa_dir = base_dir / "outputs" / "mfa" / subject / f"run-{run:02d}"
+    mfa_dir_interviewer = mfa_dir / "interviewer"
+    mfa_dir_participant = mfa_dir / "participant"
 
-    if not mfa_dir.exists():
-        print(f"✗ MFA directory not found: {mfa_dir}")
+    if not mfa_dir_interviewer.exists():
+        print(f"✗ Interviewer MFA directory not found: {mfa_dir_interviewer}")
         print(f"  Run whisper_to_mfa.py first")
         return False
 
-    # Check for input files
-    audio_files = list(mfa_dir.glob("*.wav"))
-    text_files = list(mfa_dir.glob("*.txt"))
-
-    if len(audio_files) == 0:
-        print(f"✗ No audio files in {mfa_dir}")
+    if not mfa_dir_participant.exists():
+        print(f"✗ Participant MFA directory not found: {mfa_dir_participant}")
+        print(f"  Run whisper_to_mfa.py first")
         return False
 
-    if len(text_files) == 0:
-        print(f"✗ No text files in {mfa_dir}")
-        return False
-
-    # Run MFA alignment
-    # MFA expects audio and text files in same directory
-    output_dir = mfa_dir / "textgrids"
-    output_dir.mkdir(exist_ok=True)
-
-    success = run_mfa_alignment(
-        audio_dir=mfa_dir,
-        text_dir=mfa_dir,
-        output_dir=output_dir,
-        acoustic_model=acoustic_model,
-        dictionary=dictionary,
-        num_jobs=num_jobs,
-        clean=True,
-    )
-
-    if not success:
-        print(f"✗ MFA alignment failed")
-        return False
-
-    # Parse TextGrid output
-    textgrid_files = list(output_dir.glob("*.TextGrid"))
-    if len(textgrid_files) == 0:
-        print(f"✗ No TextGrid files generated")
-        return False
-
-    textgrid_file = textgrid_files[0]
-    print(f"\nParsing TextGrid: {textgrid_file.name}")
-
+    # Process both speakers
     try:
-        words_df, phones_df = parse_textgrid(textgrid_file)
+        words_interviewer, phones_interviewer = process_speaker_mfa(
+            "interviewer",
+            mfa_dir_interviewer,
+            acoustic_model,
+            dictionary,
+            num_jobs,
+        )
+
+        words_participant, phones_participant = process_speaker_mfa(
+            "participant",
+            mfa_dir_participant,
+            acoustic_model,
+            dictionary,
+            num_jobs,
+        )
     except Exception as e:
-        print(f"✗ Error parsing TextGrid: {e}")
-        print(f"  Make sure 'praat-textgrids' is installed:")
-        print(f"  pip install praat-textgrids")
+        print(f"✗ Error during MFA alignment: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
     # Align to MEG timebase
@@ -156,36 +211,49 @@ def process_subject_run(
         with open(sync_params_file) as f:
             sync_params = json.load(f)
 
-        words_meg = align_mfa_to_meg(words_df, sync_params)
-        phones_meg = align_mfa_to_meg(phones_df, sync_params)
+        print(f"\nAligning to MEG timebase...")
+        words_interviewer_meg = align_mfa_to_meg(words_interviewer, sync_params)
+        phones_interviewer_meg = align_mfa_to_meg(phones_interviewer, sync_params)
+        words_participant_meg = align_mfa_to_meg(words_participant, sync_params)
+        phones_participant_meg = align_mfa_to_meg(phones_participant, sync_params)
     else:
         print(f"⚠ Sync params not found: {sync_params_file}")
         print(f"  Saving audio times only (not MEG-aligned)")
-        words_meg = words_df
-        phones_meg = phones_df
+        words_interviewer_meg = words_interviewer
+        phones_interviewer_meg = phones_interviewer
+        words_participant_meg = words_participant
+        phones_participant_meg = phones_participant
 
     # Save output
     features_dir = base_dir / "outputs" / "features" / subject / f"run-{run:02d}"
     features_dir.mkdir(parents=True, exist_ok=True)
 
-    words_output = features_dir / "transcript_mfa.csv"
-    phones_output = features_dir / "phones_mfa.csv"
+    # Save interviewer
+    words_interviewer_output = features_dir / "transcript_mfa_interviewer.csv"
+    phones_interviewer_output = features_dir / "phones_mfa_interviewer.csv"
+    words_interviewer_meg.to_csv(words_interviewer_output, index=False)
+    phones_interviewer_meg.to_csv(phones_interviewer_output, index=False)
 
-    words_meg.to_csv(words_output, index=False)
-    phones_meg.to_csv(phones_output, index=False)
+    # Save participant
+    words_participant_output = features_dir / "transcript_mfa_participant.csv"
+    phones_participant_output = features_dir / "phones_mfa_participant.csv"
+    words_participant_meg.to_csv(words_participant_output, index=False)
+    phones_participant_meg.to_csv(phones_participant_output, index=False)
 
     print(f"\n✓ Saved MFA output:")
-    print(f"  Words: {words_output}")
-    print(f"  Phones: {phones_output}")
+    print(f"  Interviewer words: {words_interviewer_output}")
+    print(f"  Interviewer phones: {phones_interviewer_output}")
+    print(f"  Participant words: {words_participant_output}")
+    print(f"  Participant phones: {phones_participant_output}")
 
     # Compare with Whisper timing
     if compare_timing:
-        whisper_transcript = base_dir / "outputs" / "features" / subject / f"run-{run:02d}" / "transcript.csv"
-        if whisper_transcript.exists():
-            print(f"\nComparing Whisper vs MFA timing...")
-            transcript_df = pd.read_csv(whisper_transcript)
+        print(f"\nComparing Whisper vs MFA timing...")
 
-            # Extract Whisper word times
+        # Interviewer comparison
+        whisper_interviewer = features_dir / "transcript_interviewer.csv"
+        if whisper_interviewer.exists():
+            transcript_df = pd.read_csv(whisper_interviewer)
             whisper_words = []
             for _, seg in transcript_df.iterrows():
                 if 'words' not in seg or pd.isna(seg['words']):
@@ -196,15 +264,31 @@ def process_subject_run(
                         'start': w['start'],
                         'word': w['word'].strip()
                     })
-
             whisper_words_df = pd.DataFrame(whisper_words)
-
-            comparison = compare_whisper_mfa_timing(whisper_words_df, words_df)
-
-            # Save comparison
-            comparison_output = features_dir / "timing_comparison.csv"
+            comparison = compare_whisper_mfa_timing(whisper_words_df, words_interviewer)
+            comparison_output = features_dir / "timing_comparison_interviewer.csv"
             comparison.to_csv(comparison_output, index=False)
-            print(f"  Saved comparison: {comparison_output}")
+            print(f"  Saved interviewer comparison: {comparison_output}")
+
+        # Participant comparison
+        whisper_participant = features_dir / "transcript_participant.csv"
+        if whisper_participant.exists():
+            transcript_df = pd.read_csv(whisper_participant)
+            whisper_words = []
+            for _, seg in transcript_df.iterrows():
+                if 'words' not in seg or pd.isna(seg['words']):
+                    continue
+                words_data = eval(seg['words']) if isinstance(seg['words'], str) else seg['words']
+                for w in words_data:
+                    whisper_words.append({
+                        'start': w['start'],
+                        'word': w['word'].strip()
+                    })
+            whisper_words_df = pd.DataFrame(whisper_words)
+            comparison = compare_whisper_mfa_timing(whisper_words_df, words_participant)
+            comparison_output = features_dir / "timing_comparison_participant.csv"
+            comparison.to_csv(comparison_output, index=False)
+            print(f"  Saved participant comparison: {comparison_output}")
 
     return True
 
