@@ -6,8 +6,10 @@ Adds TRF predictor time series as MISC channels to MEG .fif files.
 All predictors are at MEG sampling rate (1000 Hz) in MEG timebase.
 
 Predictors added:
-- MISC_envelope_interviewer: Interviewer audio envelope
-- MISC_envelope_participant: Participant audio envelope
+- MISC_envelope_interviewer: Interviewer audio envelope (external)
+- MISC_envelope_participant: Participant audio envelope (external)
+- MISC_envelope_meg_mic7: MEG MISC 007 envelope (for sync verification)
+- MISC_envelope_meg_mic8: MEG MISC 008 envelope (for sync verification)
 - MISC_f0_interviewer: Interviewer F0 contour
 - MISC_f0_participant: Participant F0 contour
 - MISC_word_onsets: Delta functions at MFA word onsets
@@ -45,6 +47,7 @@ from utils.logging_setup import setup_logging
 from utils.io import load_audio
 from predictors.trf_predictors import (
     create_envelope_predictor,
+    create_meg_audio_envelope,
     create_f0_predictor,
     create_word_onset_predictor,
     create_surprisal_predictor,
@@ -168,35 +171,42 @@ def process_subject_run(
     # Create predictors
     print("\nCreating predictors...")
 
-    # 1. Envelopes
-    print("  1/8: Envelope (interviewer)...")
+    # 1. External audio envelopes
+    print("  1/10: Envelope (interviewer, external)...")
     env_interviewer = create_envelope_predictor(
         audio_interviewer, sr, meg_times, sync_offset
     )
 
-    print("  2/8: Envelope (participant)...")
+    print("  2/10: Envelope (participant, external)...")
     env_participant = create_envelope_predictor(
         audio_participant, sr, meg_times, sync_offset
     )
 
-    # 2. F0
-    print("  3/8: F0 (interviewer)...")
+    # 2. MEG-recorded audio envelopes (for sync verification)
+    print("  3/10: Envelope (MEG MIC 7)...")
+    env_meg_mic7 = create_meg_audio_envelope(meg_raw, 'MISC 007')
+
+    print("  4/10: Envelope (MEG MIC 8)...")
+    env_meg_mic8 = create_meg_audio_envelope(meg_raw, 'MISC 008')
+
+    # 3. F0
+    print("  5/10: F0 (interviewer)...")
     f0_interviewer = create_f0_predictor(
         audio_interviewer, sr, meg_times, sync_offset
     )
 
-    print("  4/8: F0 (participant)...")
+    print("  6/10: F0 (participant)...")
     f0_participant = create_f0_predictor(
         audio_participant, sr, meg_times, sync_offset
     )
 
-    # 3. Word onsets
-    print("  5/8: Word onsets...")
+    # 4. Word onsets
+    print("  7/10: Word onsets...")
     word_onsets = create_word_onset_predictor(word_times_meg, meg_times)
 
-    # 4. Surprisal
+    # 5. Surprisal
     if compute_surprisal_flag:
-        print("  6/8: Surprisal (GPT-2, this may take a few minutes)...")
+        print("  8/10: Surprisal (GPT-2, this may take a few minutes)...")
         try:
             surprisal_values = compute_word_surprisal(words)
             surprisal = create_surprisal_predictor(
@@ -207,17 +217,17 @@ def process_subject_run(
             print(f"  Creating zero surprisal predictor")
             surprisal = np.zeros(len(meg_times))
     else:
-        print("  6/8: Surprisal (skipped, using zeros)...")
+        print("  8/10: Surprisal (skipped, using zeros)...")
         surprisal = np.zeros(len(meg_times))
 
-    # 5. Duration
-    print("  7/8: Duration...")
+    # 6. Duration
+    print("  9/10: Duration...")
     duration = create_duration_predictor(
         word_times_meg, word_durations, meg_times
     )
 
-    # 6. Speaker
-    print("  8/8: Speaker...")
+    # 7. Speaker
+    print("  10/10: Speaker...")
     speaker = create_speaker_predictor(env_interviewer, env_participant)
 
     # Create info for new channels
@@ -225,6 +235,8 @@ def process_subject_run(
     ch_names = [
         'MISC_envelope_interviewer',
         'MISC_envelope_participant',
+        'MISC_envelope_meg_mic7',
+        'MISC_envelope_meg_mic8',
         'MISC_f0_interviewer',
         'MISC_f0_participant',
         'MISC_word_onsets',
@@ -239,6 +251,8 @@ def process_subject_run(
     predictor_data = np.vstack([
         env_interviewer,
         env_participant,
+        env_meg_mic7,
+        env_meg_mic8,
         f0_interviewer,
         f0_participant,
         word_onsets,
@@ -277,14 +291,30 @@ def process_subject_run(
         'meg_duration_s': float(meg_times[-1]),
         'predictors': {
             'envelope_interviewer': {
+                'source': 'external_audio',
                 'min': float(env_interviewer.min()),
                 'max': float(env_interviewer.max()),
                 'mean': float(env_interviewer.mean()),
             },
             'envelope_participant': {
+                'source': 'external_audio',
                 'min': float(env_participant.min()),
                 'max': float(env_participant.max()),
                 'mean': float(env_participant.mean()),
+            },
+            'envelope_meg_mic7': {
+                'source': 'meg_internal',
+                'channel': 'MISC 007',
+                'min': float(env_meg_mic7.min()),
+                'max': float(env_meg_mic7.max()),
+                'mean': float(env_meg_mic7.mean()),
+            },
+            'envelope_meg_mic8': {
+                'source': 'meg_internal',
+                'channel': 'MISC 008',
+                'min': float(env_meg_mic8.min()),
+                'max': float(env_meg_mic8.max()),
+                'mean': float(env_meg_mic8.mean()),
             },
             'f0_interviewer': {
                 'pct_voiced': float(100 * np.sum(f0_interviewer > 0) / len(f0_interviewer)),

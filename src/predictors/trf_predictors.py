@@ -77,6 +77,54 @@ def create_envelope_predictor(
     return envelope_meg
 
 
+def create_meg_audio_envelope(
+    meg_raw: 'mne.io.Raw',
+    channel_name: str,
+    smoothing_sigma_ms: float = 10,
+) -> np.ndarray:
+    """
+    Create envelope from MEG auxiliary audio channel.
+
+    Parameters
+    ----------
+    meg_raw : mne.io.Raw
+        MEG raw data
+    channel_name : str
+        Name of MEG audio channel (e.g., 'MISC 007', 'MISC 008')
+    smoothing_sigma_ms : float
+        Gaussian smoothing width (milliseconds)
+
+    Returns
+    -------
+    envelope_meg : np.ndarray
+        Envelope of MEG audio channel
+
+    Notes
+    -----
+    This extracts the envelope from audio recorded directly to the MEG file
+    (e.g., from microphones connected to MEG auxiliary inputs).
+    Useful for verifying synchronization with external audio.
+    """
+    if channel_name not in meg_raw.ch_names:
+        raise ValueError(f"Channel {channel_name} not found in MEG data")
+
+    # Get channel data
+    audio_data = meg_raw[channel_name][0][0]
+
+    # Compute envelope (absolute value)
+    envelope_meg = np.abs(audio_data)
+
+    # Smooth if requested
+    if smoothing_sigma_ms > 0:
+        meg_sfreq = meg_raw.info['sfreq']
+        sigma_samples = smoothing_sigma_ms * meg_sfreq / 1000
+        envelope_meg = gaussian_filter1d(envelope_meg, sigma_samples)
+
+    logger.info(f"Created MEG audio envelope ({channel_name}): range={envelope_meg.min():.4f} to {envelope_meg.max():.4f}")
+
+    return envelope_meg
+
+
 def create_f0_predictor(
     audio: np.ndarray,
     sr: int,
