@@ -95,10 +95,36 @@ def create_interactive_plot(
     """
     # Get MISC channels (predictors)
     misc_picks = mne.pick_types(raw.info, misc=True)
-    ch_names = [raw.ch_names[i] for i in misc_picks]
-    n_channels = len(ch_names)
+    all_ch_names = [raw.ch_names[i] for i in misc_picks]
 
-    print(f"Found {n_channels} predictor channels")
+    # Filter to only TRF predictor channels (the ones we added)
+    trf_predictor_keywords = [
+        'envelope_interviewer', 'envelope_participant',
+        'envelope_meg_mic7', 'envelope_meg_mic8',
+        'f0_interviewer', 'f0_participant',
+        'word_onsets_interviewer', 'word_onsets_participant',
+        'surprisal_interviewer', 'surprisal_participant',
+        'duration_interviewer', 'duration_participant',
+        'f0_deviation_interviewer', 'f0_deviation_participant',
+        'duration_deviation_interviewer', 'duration_deviation_participant',
+        'pause_interviewer', 'pause_participant',
+        'speaker',
+    ]
+
+    # Find channels matching our TRF predictors
+    trf_picks = []
+    ch_names = []
+    for i, ch_name in enumerate(all_ch_names):
+        ch_lower = ch_name.lower()
+        for keyword in trf_predictor_keywords:
+            if keyword in ch_lower:
+                trf_picks.append(misc_picks[i])
+                ch_names.append(ch_name)
+                break
+
+    n_channels = len(ch_names)
+    print(f"Found {len(all_ch_names)} total MISC channels")
+    print(f"Displaying {n_channels} TRF predictor channels")
 
     # Get time range
     times = raw.times
@@ -114,8 +140,8 @@ def create_interactive_plot(
 
     print(f"Displaying time range: {tmin:.1f}s to {tmax:.1f}s ({len(times_cropped)} samples)")
 
-    # Extract data
-    data, _ = raw[misc_picks, idx_min:idx_max]
+    # Extract data (only TRF predictor channels)
+    data, _ = raw[trf_picks, idx_min:idx_max]
 
     # Create figure with subplots
     fig = make_subplots(
