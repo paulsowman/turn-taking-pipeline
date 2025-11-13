@@ -215,20 +215,30 @@ def process_subject_run(
     print(f"  Participant words: {len(mfa_participant_df)}")
 
     # Extract word data for interviewer
+    # Filter out rows with missing words
+    valid_mask_int = mfa_interviewer_df['word'].notna()
+    mfa_interviewer_df = mfa_interviewer_df[valid_mask_int].copy()
+
     word_times_interviewer_meg = (
         mfa_interviewer_df['start_meg'].values if 'start_meg' in mfa_interviewer_df
         else (mfa_interviewer_df['start'].values - sync_offset)
     )
     word_durations_interviewer = mfa_interviewer_df['duration'].values
-    words_interviewer = mfa_interviewer_df['word'].tolist()
+    # Convert words to strings (handles numeric values like "1", "2")
+    words_interviewer = [str(w) for w in mfa_interviewer_df['word'].tolist()]
 
     # Extract word data for participant
+    # Filter out rows with missing words
+    valid_mask_part = mfa_participant_df['word'].notna()
+    mfa_participant_df = mfa_participant_df[valid_mask_part].copy()
+
     word_times_participant_meg = (
         mfa_participant_df['start_meg'].values if 'start_meg' in mfa_participant_df
         else (mfa_participant_df['start'].values - sync_offset)
     )
     word_durations_participant = mfa_participant_df['duration'].values
-    words_participant = mfa_participant_df['word'].tolist()
+    # Convert words to strings (handles numeric values like "1", "2")
+    words_participant = [str(w) for w in mfa_participant_df['word'].tolist()]
 
     # Create predictors
     print("\nCreating predictors...")
