@@ -5,19 +5,25 @@ Create TRF Analysis FIF Files
 Adds TRF predictor time series as MISC channels to MEG .fif files.
 All predictors are at MEG sampling rate (1000 Hz) in MEG timebase.
 
-Predictors added (13 total):
+Predictors added (13 total, grouped by speaker):
+
+INTERVIEWER (6 channels):
 - MISC_envelope_interviewer: Interviewer audio envelope (external)
-- MISC_envelope_participant: Participant audio envelope (external)
-- MISC_envelope_meg_mic7: MEG MISC 007 envelope (for sync verification)
-- MISC_envelope_meg_mic8: MEG MISC 008 envelope (for sync verification)
+- MISC_envelope_meg_mic7: MEG MISC 007 envelope (interviewer, for sync verification)
 - MISC_f0_interviewer: Interviewer F0 contour
-- MISC_f0_participant: Participant F0 contour
 - MISC_word_onsets_interviewer: Delta functions at interviewer word onsets
-- MISC_word_onsets_participant: Delta functions at participant word onsets
 - MISC_surprisal_interviewer: Delta functions weighted by interviewer word surprisal
-- MISC_surprisal_participant: Delta functions weighted by participant word surprisal
 - MISC_duration_interviewer: Delta functions weighted by interviewer word duration
+
+PARTICIPANT (6 channels):
+- MISC_envelope_participant: Participant audio envelope (external)
+- MISC_envelope_meg_mic8: MEG MISC 008 envelope (participant, for sync verification)
+- MISC_f0_participant: Participant F0 contour
+- MISC_word_onsets_participant: Delta functions at participant word onsets
+- MISC_surprisal_participant: Delta functions weighted by participant word surprisal
 - MISC_duration_participant: Delta functions weighted by participant word duration
+
+SHARED (1 channel):
 - MISC_speaker: Categorical (0=silence, 1=interviewer, 2=participant, 3=overlap)
 
 Usage:
@@ -326,38 +332,45 @@ def process_subject_run(
 
     # Create info for new channels
     print("\nAdding predictors as MISC channels...")
+    # Channels grouped by speaker for easy visualization
     ch_names = [
+        # Interviewer group (6 channels)
         'MISC_envelope_interviewer',
-        'MISC_envelope_participant',
         'MISC_envelope_meg_mic7',
-        'MISC_envelope_meg_mic8',
         'MISC_f0_interviewer',
-        'MISC_f0_participant',
         'MISC_word_onsets_interviewer',
-        'MISC_word_onsets_participant',
         'MISC_surprisal_interviewer',
-        'MISC_surprisal_participant',
         'MISC_duration_interviewer',
+        # Participant group (6 channels)
+        'MISC_envelope_participant',
+        'MISC_envelope_meg_mic8',
+        'MISC_f0_participant',
+        'MISC_word_onsets_participant',
+        'MISC_surprisal_participant',
         'MISC_duration_participant',
+        # Shared (1 channel)
         'MISC_speaker',
     ]
 
     info = mne.create_info(ch_names, meg_sfreq, ch_types='misc')
 
-    # Stack predictors
+    # Stack predictors (same order as ch_names)
     predictor_data = np.vstack([
+        # Interviewer group
         env_interviewer,
-        env_participant,
         env_meg_mic7,
-        env_meg_mic8,
         f0_interviewer,
-        f0_participant,
         word_onsets_interviewer,
-        word_onsets_participant,
         surprisal_interviewer,
-        surprisal_participant,
         duration_interviewer,
+        # Participant group
+        env_participant,
+        env_meg_mic8,
+        f0_participant,
+        word_onsets_participant,
+        surprisal_participant,
         duration_participant,
+        # Shared
         speaker.astype(float),
     ])
 
