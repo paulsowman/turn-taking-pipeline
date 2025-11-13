@@ -492,6 +492,13 @@ def compute_word_surprisal(
             # Tokenize
             input_ids = tokenizer.encode(context_text, return_tensors='pt').to(device)
 
+            # Skip if we don't have enough tokens (need at least 2)
+            if input_ids.shape[1] < 2:
+                # First word or single-token word with no context
+                # Use a default surprisal (median value, ~5 nats)
+                surprisal[i] = 5.0
+                continue
+
             # Get logits
             outputs = model(input_ids)
             logits = outputs.logits
