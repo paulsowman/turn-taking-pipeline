@@ -12,7 +12,7 @@ INTERVIEWER (6 channels):
 - MISC_envelope_meg_mic7: MEG MISC 007 envelope (interviewer, for sync verification)
 - MISC_f0_interviewer: Interviewer F0 contour (speaker-masked)
 - MISC_word_onsets_interviewer: Delta functions at interviewer word onsets
-- MISC_surprisal_interviewer: Delta functions weighted by interviewer word surprisal
+- MISC_surprisal_interviewer: Conversation-aware surprisal (GPT-2, chronological)
 - MISC_duration_interviewer: Delta functions weighted by interviewer word duration
 
 PARTICIPANT (6 channels):
@@ -20,8 +20,12 @@ PARTICIPANT (6 channels):
 - MISC_envelope_meg_mic8: MEG MISC 008 envelope (participant, for sync verification)
 - MISC_f0_participant: Participant F0 contour (speaker-masked)
 - MISC_word_onsets_participant: Delta functions at participant word onsets
-- MISC_surprisal_participant: Delta functions weighted by participant word surprisal
+- MISC_surprisal_participant: Conversation-aware surprisal (GPT-2, chronological)
 - MISC_duration_participant: Delta functions weighted by participant word duration
+
+Note: Surprisal is conversation-aware - each word's surprisal is calculated
+based on the full chronological conversation history (both speakers), capturing
+true conversational predictability.
 
 SHARED (1 channel):
 - MISC_speaker: Categorical (0=silence, 1=interviewer, 2=participant, 3=overlap)
@@ -256,13 +260,51 @@ def process_subject_run(
     print("  8/13: Word onsets (participant)...")
     word_onsets_participant = create_word_onset_predictor(word_times_participant_meg, meg_times)
 
-    # 5. Surprisal (normalized to 0-1, speaker-specific)
+    # 5. Surprisal (normalized to 0-1, conversation-aware)
+    # Calculate on chronological conversation sequence, then split by speaker
     surprisal_interviewer_raw_stats = None
     surprisal_participant_raw_stats = None
     if compute_surprisal_flag:
-        print("  9/13: Surprisal (interviewer, GPT-2)...")
+        print("  9-10/13: Surprisal (chronological conversation, GPT-2)...")
         try:
-            surprisal_values_interviewer = compute_word_surprisal(words_interviewer)
+            # Merge words from both speakers chronologically
+            all_words_with_info = []
+            for i, (word, time) in enumerate(zip(words_interviewer, word_times_interviewer_meg)):
+                all_words_with_info.append({
+                    'time': time,
+                    'word': word,
+                    'speaker': 'interviewer',
+                    'idx_in_speaker': i,
+                })
+            for i, (word, time) in enumerate(zip(words_participant, word_times_participant_meg)):
+                all_words_with_info.append({
+                    'time': time,
+                    'word': word,
+                    'speaker': 'participant',
+                    'idx_in_speaker': i,
+                })
+
+            # Sort by time to get chronological conversation sequence
+            all_words_with_info.sort(key=lambda x: x['time'])
+            words_chronological = [w['word'] for w in all_words_with_info]
+
+            print(f"    Total words in conversation: {len(words_chronological)}")
+            print(f"    Computing surprisal on full conversation sequence...")
+
+            # Calculate surprisal on chronological sequence
+            # Each word conditioned on ALL previous words (both speakers)
+            surprisal_chronological = compute_word_surprisal(words_chronological)
+
+            # Split back to speaker-specific arrays
+            surprisal_values_interviewer = np.zeros(len(words_interviewer))
+            surprisal_values_participant = np.zeros(len(words_participant))
+
+            for word_info, surprisal_val in zip(all_words_with_info, surprisal_chronological):
+                if word_info['speaker'] == 'interviewer':
+                    surprisal_values_interviewer[word_info['idx_in_speaker']] = surprisal_val
+                else:
+                    surprisal_values_participant[word_info['idx_in_speaker']] = surprisal_val
+
             # Save raw statistics before normalization
             surprisal_interviewer_raw_stats = {
                 'mean': float(np.mean(surprisal_values_interviewer)),
@@ -270,35 +312,34 @@ def process_subject_run(
                 'min': float(surprisal_values_interviewer.min()),
                 'max': float(surprisal_values_interviewer.max()),
             }
-            surprisal_interviewer = create_surprisal_predictor(
-                word_times_interviewer_meg, surprisal_values_interviewer, meg_times, normalize=True
-            )
-        except Exception as e:
-            print(f"  ⚠ Warning: Interviewer surprisal computation failed: {e}")
-            print(f"  Creating zero surprisal predictor")
-            surprisal_interviewer = np.zeros(len(meg_times))
-
-        print("  10/13: Surprisal (participant, GPT-2)...")
-        try:
-            surprisal_values_participant = compute_word_surprisal(words_participant)
-            # Save raw statistics before normalization
             surprisal_participant_raw_stats = {
                 'mean': float(np.mean(surprisal_values_participant)),
                 'std': float(np.std(surprisal_values_participant)),
                 'min': float(surprisal_values_participant.min()),
                 'max': float(surprisal_values_participant.max()),
             }
+
+            print(f"    Interviewer surprisal: mean={surprisal_interviewer_raw_stats['mean']:.2f} nats")
+            print(f"    Participant surprisal: mean={surprisal_participant_raw_stats['mean']:.2f} nats")
+
+            # Create speaker-specific predictors
+            surprisal_interviewer = create_surprisal_predictor(
+                word_times_interviewer_meg, surprisal_values_interviewer, meg_times, normalize=True
+            )
             surprisal_participant = create_surprisal_predictor(
                 word_times_participant_meg, surprisal_values_participant, meg_times, normalize=True
             )
+
         except Exception as e:
-            print(f"  ⚠ Warning: Participant surprisal computation failed: {e}")
-            print(f"  Creating zero surprisal predictor")
+            print(f"  ⚠ Warning: Surprisal computation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"  Creating zero surprisal predictors")
+            surprisal_interviewer = np.zeros(len(meg_times))
             surprisal_participant = np.zeros(len(meg_times))
     else:
-        print("  9/13: Surprisal (interviewer, skipped)...")
+        print("  9-10/13: Surprisal (skipped)...")
         surprisal_interviewer = np.zeros(len(meg_times))
-        print("  10/13: Surprisal (participant, skipped)...")
         surprisal_participant = np.zeros(len(meg_times))
 
     # 6. Duration (normalized to 0-1, speaker-specific)
@@ -474,14 +515,16 @@ def process_subject_run(
             'surprisal_interviewer': {
                 'computed': compute_surprisal_flag,
                 'normalized': True,
+                'conversation_aware': True,
                 'raw_stats': surprisal_interviewer_raw_stats if surprisal_interviewer_raw_stats else None,
-                'note': 'GPT-2 surprisal in nats, normalized to 0-1' if compute_surprisal_flag else 'Not computed (zeros)',
+                'note': 'GPT-2 surprisal in nats, normalized to 0-1. Conversation-aware: each word conditioned on full chronological conversation history (both speakers)' if compute_surprisal_flag else 'Not computed (zeros)',
             },
             'surprisal_participant': {
                 'computed': compute_surprisal_flag,
                 'normalized': True,
+                'conversation_aware': True,
                 'raw_stats': surprisal_participant_raw_stats if surprisal_participant_raw_stats else None,
-                'note': 'GPT-2 surprisal in nats, normalized to 0-1' if compute_surprisal_flag else 'Not computed (zeros)',
+                'note': 'GPT-2 surprisal in nats, normalized to 0-1. Conversation-aware: each word conditioned on full chronological conversation history (both speakers)' if compute_surprisal_flag else 'Not computed (zeros)',
             },
             'duration_interviewer': {
                 'normalized': True,
