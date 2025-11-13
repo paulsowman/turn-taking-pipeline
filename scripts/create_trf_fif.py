@@ -144,11 +144,32 @@ def process_subject_run(
 
     # Interviewer audio (channel 0 / left)
     audio_interviewer, sr = load_audio(audio_file_interviewer, sr=None, channel=0)
-    print(f"  Interviewer: {len(audio_interviewer)/sr:.1f}s @ {sr} Hz (channel 0)")
+    print(f"  Interviewer: {len(audio_interviewer)/sr:.1f}s @ {sr} Hz")
+    print(f"    File: {audio_file_interviewer.name}")
+    print(f"    Channel: 0 (left)")
 
-    # Participant audio (channel 1 / right)
-    audio_participant, sr = load_audio(audio_file_participant, sr=None, channel=1)
-    print(f"  Participant: {len(audio_participant)/sr:.1f}s @ {sr} Hz (channel 1)")
+    # Participant audio
+    # If separate file (subject_mic), use channel 0
+    # If same file (console_mic), use channel 1
+    if audio_file_participant != audio_file_interviewer:
+        # Separate participant file - assume mono or participant on channel 0
+        participant_channel = 0
+        print(f"  Participant: Using separate file")
+    else:
+        # Same file as interviewer - participant on channel 1 (right)
+        participant_channel = 1
+        print(f"  Participant: Using same file as interviewer")
+
+    audio_participant, sr = load_audio(audio_file_participant, sr=None, channel=participant_channel)
+    print(f"    {len(audio_participant)/sr:.1f}s @ {sr} Hz")
+    print(f"    File: {audio_file_participant.name}")
+    print(f"    Channel: {participant_channel}")
+
+    # Check if participant audio is actually silent (common issue)
+    participant_rms = np.sqrt(np.mean(audio_participant**2))
+    if participant_rms < 1e-6:
+        print(f"  ⚠ WARNING: Participant audio appears to be silent (RMS={participant_rms:.2e})")
+        print(f"  This may indicate a channel selection issue or zeroed-out audio.")
 
     # Load MFA word timing
     print("\nLoading MFA word timing...")
