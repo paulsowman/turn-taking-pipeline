@@ -5,23 +5,29 @@ Create TRF Analysis FIF Files
 Adds TRF predictor time series as MISC channels to MEG .fif files.
 All predictors are at MEG sampling rate (1000 Hz) in MEG timebase.
 
-Predictors added (13 total, grouped by speaker):
+Predictors added (19 total, grouped by speaker):
 
-INTERVIEWER (6 channels):
+INTERVIEWER (9 channels):
 - MISC_envelope_interviewer: Interviewer audio envelope (external)
 - MISC_envelope_meg_mic7: MEG MISC 007 envelope (interviewer, for sync verification)
 - MISC_f0_interviewer: Interviewer F0 contour (speaker-masked)
 - MISC_word_onsets_interviewer: Delta functions at interviewer word onsets
 - MISC_surprisal_interviewer: Conversation-aware surprisal (GPT-2, chronological)
 - MISC_duration_interviewer: Delta functions weighted by interviewer word duration
+- MISC_f0_deviation_interviewer: Z-scored F0 deviations (prosodic unexpectedness)
+- MISC_duration_deviation_interviewer: Z-scored duration deviations
+- MISC_pause_interviewer: Time since last interviewer word (normalized to 0-1)
 
-PARTICIPANT (6 channels):
+PARTICIPANT (9 channels):
 - MISC_envelope_participant: Participant audio envelope (external)
 - MISC_envelope_meg_mic8: MEG MISC 008 envelope (participant, for sync verification)
 - MISC_f0_participant: Participant F0 contour (speaker-masked)
 - MISC_word_onsets_participant: Delta functions at participant word onsets
 - MISC_surprisal_participant: Conversation-aware surprisal (GPT-2, chronological)
 - MISC_duration_participant: Delta functions weighted by participant word duration
+- MISC_f0_deviation_participant: Z-scored F0 deviations (prosodic unexpectedness)
+- MISC_duration_deviation_participant: Z-scored duration deviations
+- MISC_pause_participant: Time since last participant word (normalized to 0-1)
 
 Note: Surprisal is conversation-aware - each word's surprisal is calculated
 based on the full chronological conversation history (both speakers), capturing
@@ -67,6 +73,9 @@ from predictors.trf_predictors import (
     create_duration_predictor,
     create_speaker_predictor,
     compute_word_surprisal,
+    create_f0_deviation_predictor,
+    create_duration_deviation_predictor,
+    create_pause_predictor,
 )
 
 # All available subjects
@@ -389,24 +398,81 @@ def process_subject_run(
     f0_interviewer = f0_interviewer_masked
     f0_participant = f0_participant_masked
 
+    # 8. Prosodic deviation predictors
+    print("\nCreating prosodic deviation predictors...")
+
+    print("  14/19: F0 deviation (interviewer)...")
+    f0_deviation_interviewer = create_f0_deviation_predictor(
+        word_times_interviewer_meg,
+        word_durations_interviewer,
+        audio_interviewer,
+        sr,
+        meg_times,
+        sync_offset
+    )
+
+    print("  15/19: F0 deviation (participant)...")
+    f0_deviation_participant = create_f0_deviation_predictor(
+        word_times_participant_meg,
+        word_durations_participant,
+        audio_participant,
+        sr,
+        meg_times,
+        sync_offset
+    )
+
+    print("  16/19: Duration deviation (interviewer)...")
+    duration_deviation_interviewer = create_duration_deviation_predictor(
+        word_times_interviewer_meg,
+        word_durations_interviewer,
+        meg_times
+    )
+
+    print("  17/19: Duration deviation (participant)...")
+    duration_deviation_participant = create_duration_deviation_predictor(
+        word_times_participant_meg,
+        word_durations_participant,
+        meg_times
+    )
+
+    print("  18/19: Pause (interviewer)...")
+    pause_interviewer = create_pause_predictor(
+        word_times_interviewer_meg,
+        meg_times,
+        normalize=True
+    )
+
+    print("  19/19: Pause (participant)...")
+    pause_participant = create_pause_predictor(
+        word_times_participant_meg,
+        meg_times,
+        normalize=True
+    )
+
     # Create info for new channels
     print("\nAdding predictors as MISC channels...")
     # Channels grouped by speaker for easy visualization
     ch_names = [
-        # Interviewer group (6 channels)
+        # Interviewer group (9 channels)
         'MISC_envelope_interviewer',
         'MISC_envelope_meg_mic7',
         'MISC_f0_interviewer',
         'MISC_word_onsets_interviewer',
         'MISC_surprisal_interviewer',
         'MISC_duration_interviewer',
-        # Participant group (6 channels)
+        'MISC_f0_deviation_interviewer',
+        'MISC_duration_deviation_interviewer',
+        'MISC_pause_interviewer',
+        # Participant group (9 channels)
         'MISC_envelope_participant',
         'MISC_envelope_meg_mic8',
         'MISC_f0_participant',
         'MISC_word_onsets_participant',
         'MISC_surprisal_participant',
         'MISC_duration_participant',
+        'MISC_f0_deviation_participant',
+        'MISC_duration_deviation_participant',
+        'MISC_pause_participant',
         # Shared (1 channel)
         'MISC_speaker',
     ]
@@ -422,6 +488,9 @@ def process_subject_run(
         word_onsets_interviewer,
         surprisal_interviewer,
         duration_interviewer,
+        f0_deviation_interviewer,
+        duration_deviation_interviewer,
+        pause_interviewer,
         # Participant group
         env_participant,
         env_meg_mic8,
@@ -429,6 +498,9 @@ def process_subject_run(
         word_onsets_participant,
         surprisal_participant,
         duration_participant,
+        f0_deviation_participant,
+        duration_deviation_participant,
+        pause_participant,
         # Shared
         speaker.astype(float),
     ])
@@ -543,6 +615,40 @@ def process_subject_run(
                 'pct_overlap': float(100 * np.sum(speaker == 3) / len(speaker)),
                 'normalized': False,
                 'note': 'Categorical: 0=silence, 1=interviewer, 2=participant, 3=overlap',
+            },
+            'f0_deviation_interviewer': {
+                'n_values': int(np.sum(f0_deviation_interviewer != 0)),
+                'mean_z': float(np.mean(f0_deviation_interviewer[f0_deviation_interviewer != 0])) if np.any(f0_deviation_interviewer != 0) else 0,
+                'std_z': float(np.std(f0_deviation_interviewer[f0_deviation_interviewer != 0])) if np.any(f0_deviation_interviewer != 0) else 0,
+                'note': 'Z-scored F0 deviations from speaker mean (prosodic unexpectedness)',
+            },
+            'f0_deviation_participant': {
+                'n_values': int(np.sum(f0_deviation_participant != 0)),
+                'mean_z': float(np.mean(f0_deviation_participant[f0_deviation_participant != 0])) if np.any(f0_deviation_participant != 0) else 0,
+                'std_z': float(np.std(f0_deviation_participant[f0_deviation_participant != 0])) if np.any(f0_deviation_participant != 0) else 0,
+                'note': 'Z-scored F0 deviations from speaker mean (prosodic unexpectedness)',
+            },
+            'duration_deviation_interviewer': {
+                'n_values': int(np.sum(duration_deviation_interviewer != 0)),
+                'mean_z': float(np.mean(duration_deviation_interviewer[duration_deviation_interviewer != 0])) if np.any(duration_deviation_interviewer != 0) else 0,
+                'std_z': float(np.std(duration_deviation_interviewer[duration_deviation_interviewer != 0])) if np.any(duration_deviation_interviewer != 0) else 0,
+                'note': 'Z-scored duration deviations from speaker mean',
+            },
+            'duration_deviation_participant': {
+                'n_values': int(np.sum(duration_deviation_participant != 0)),
+                'mean_z': float(np.mean(duration_deviation_participant[duration_deviation_participant != 0])) if np.any(duration_deviation_participant != 0) else 0,
+                'std_z': float(np.std(duration_deviation_participant[duration_deviation_participant != 0])) if np.any(duration_deviation_participant != 0) else 0,
+                'note': 'Z-scored duration deviations from speaker mean',
+            },
+            'pause_interviewer': {
+                'n_values': int(np.sum(pause_interviewer != 0)),
+                'normalized': True,
+                'note': 'Time since last interviewer word (inter-word interval), normalized to 0-1',
+            },
+            'pause_participant': {
+                'n_values': int(np.sum(pause_participant != 0)),
+                'normalized': True,
+                'note': 'Time since last participant word (inter-word interval), normalized to 0-1',
             },
         },
     }

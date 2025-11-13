@@ -519,3 +519,228 @@ def compute_word_surprisal(
             torch.cuda.empty_cache()
 
     return surprisal
+
+
+def create_f0_deviation_predictor(
+    word_times_meg: np.ndarray,
+    word_durations: np.ndarray,
+    audio: np.ndarray,
+    sr: int,
+    meg_times: np.ndarray,
+    sync_offset: float,
+    fmin: float = 80,
+    fmax: float = 400,
+    hop_length_ms: float = 10,
+) -> np.ndarray:
+    """
+    Create F0 deviation predictor (z-scored deviations from speaker mean).
+
+    Measures prosodic unexpectedness: how much does each word's F0 deviate
+    from the speaker's typical F0?
+
+    Parameters
+    ----------
+    word_times_meg : np.ndarray
+        Word onset times in MEG timebase (seconds)
+    word_durations : np.ndarray
+        Duration of each word (seconds)
+    audio : np.ndarray
+        Audio signal (mono)
+    sr : int
+        Audio sampling rate
+    meg_times : np.ndarray
+        MEG time points (seconds)
+    sync_offset : float
+        Sync offset for audio->MEG conversion
+    fmin : float
+        Minimum F0 (Hz)
+    fmax : float
+        Maximum F0 (Hz)
+    hop_length_ms : float
+        Hop length for F0 computation (milliseconds)
+
+    Returns
+    -------
+    f0_deviation : np.ndarray
+        Z-scored F0 deviations at word onsets (0 elsewhere)
+    """
+    hop_length = int(hop_length_ms * sr / 1000)
+
+    # Compute F0 in audio timebase
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        f0, voiced_flag, voiced_probs = librosa.pyin(
+            audio,
+            sr=sr,
+            fmin=fmin,
+            fmax=fmax,
+            hop_length=hop_length,
+            frame_length=int(0.025 * sr),
+            fill_na=0.0
+        )
+
+    f0_times_audio = np.arange(len(f0)) * hop_length / sr
+
+    # Compute mean F0 for this speaker (voiced frames only)
+    voiced_f0 = f0[f0 > 0]
+    if len(voiced_f0) > 0:
+        f0_mean = np.mean(voiced_f0)
+        f0_std = np.std(voiced_f0)
+    else:
+        f0_mean = 0
+        f0_std = 1
+        logger.warning("No voiced F0 found for deviation calculation")
+
+    # For each word, compute mean F0 during that word
+    word_f0_values = []
+    for word_time, duration in zip(word_times_meg, word_durations):
+        # Convert to audio timebase
+        word_time_audio = word_time + sync_offset
+        word_end_audio = word_time_audio + duration
+
+        # Find F0 frames within this word
+        mask = (f0_times_audio >= word_time_audio) & (f0_times_audio < word_end_audio)
+        word_f0 = f0[mask]
+
+        # Get mean F0 for this word (voiced frames only)
+        voiced_word_f0 = word_f0[word_f0 > 0]
+        if len(voiced_word_f0) > 0:
+            word_f0_mean = np.mean(voiced_word_f0)
+        else:
+            word_f0_mean = 0  # Unvoiced word
+
+        word_f0_values.append(word_f0_mean)
+
+    word_f0_values = np.array(word_f0_values)
+
+    # Compute z-scored deviations for voiced words
+    voiced_mask = word_f0_values > 0
+    f0_deviation_values = np.zeros(len(word_f0_values))
+
+    if f0_std > 0:
+        f0_deviation_values[voiced_mask] = (word_f0_values[voiced_mask] - f0_mean) / f0_std
+
+    # Create predictor: delta functions weighted by F0 deviation
+    f0_deviation = np.zeros(len(meg_times))
+    for word_time, dev in zip(word_times_meg, f0_deviation_values):
+        idx = np.argmin(np.abs(meg_times - word_time))
+        f0_deviation[idx] = dev
+
+    n_voiced = np.sum(voiced_mask)
+    if n_voiced > 0:
+        logger.info(f"Created F0 deviation predictor: {n_voiced}/{len(word_f0_values)} voiced words, mean={np.mean(f0_deviation_values[voiced_mask]):.2f} z-scores")
+    else:
+        logger.info(f"Created F0 deviation predictor: no voiced words")
+
+    return f0_deviation
+
+
+def create_duration_deviation_predictor(
+    word_times_meg: np.ndarray,
+    word_durations: np.ndarray,
+    meg_times: np.ndarray,
+) -> np.ndarray:
+    """
+    Create duration deviation predictor (z-scored deviations from speaker mean).
+
+    Measures prosodic unexpectedness: how much does each word's duration deviate
+    from the speaker's typical word duration?
+
+    Parameters
+    ----------
+    word_times_meg : np.ndarray
+        Word onset times in MEG timebase (seconds)
+    word_durations : np.ndarray
+        Duration of each word (seconds)
+    meg_times : np.ndarray
+        MEG time points (seconds)
+
+    Returns
+    -------
+    duration_deviation : np.ndarray
+        Z-scored duration deviations at word onsets (0 elsewhere)
+    """
+    # Compute mean and std of word durations
+    if len(word_durations) > 0:
+        dur_mean = np.mean(word_durations)
+        dur_std = np.std(word_durations)
+    else:
+        dur_mean = 0
+        dur_std = 1
+
+    # Compute z-scored deviations
+    if dur_std > 0:
+        duration_deviation_values = (word_durations - dur_mean) / dur_std
+    else:
+        duration_deviation_values = np.zeros(len(word_durations))
+
+    # Create predictor: delta functions weighted by duration deviation
+    duration_deviation = np.zeros(len(meg_times))
+    for word_time, dev in zip(word_times_meg, duration_deviation_values):
+        idx = np.argmin(np.abs(meg_times - word_time))
+        duration_deviation[idx] = dev
+
+    logger.info(f"Created duration deviation predictor: mean={np.mean(duration_deviation_values):.2f} z-scores, range={duration_deviation_values.min():.2f} to {duration_deviation_values.max():.2f}")
+
+    return duration_deviation
+
+
+def create_pause_predictor(
+    word_times_meg: np.ndarray,
+    meg_times: np.ndarray,
+    normalize: bool = True,
+) -> np.ndarray:
+    """
+    Create pause-before-word predictor.
+
+    Measures time since last word (inter-word interval), capturing pauses
+    and speech rhythm.
+
+    Parameters
+    ----------
+    word_times_meg : np.ndarray
+        Word onset times in MEG timebase (seconds)
+    meg_times : np.ndarray
+        MEG time points (seconds)
+    normalize : bool
+        Normalize pause values to 0-1 range
+
+    Returns
+    -------
+    pause : np.ndarray
+        Pause durations at word onsets (0 elsewhere)
+    """
+    # Compute inter-word intervals
+    if len(word_times_meg) > 1:
+        # Time since previous word
+        pause_values = np.zeros(len(word_times_meg))
+        pause_values[0] = 0  # First word has no previous word
+        pause_values[1:] = np.diff(word_times_meg)
+
+        # Clip negative values (should not happen, but just in case)
+        pause_values = np.maximum(pause_values, 0)
+    else:
+        pause_values = np.zeros(len(word_times_meg))
+
+    # Normalize if requested
+    if normalize and len(pause_values) > 0:
+        pause_min = pause_values.min()
+        pause_max = pause_values.max()
+        if pause_max > pause_min:
+            pause_values_norm = (pause_values - pause_min) / (pause_max - pause_min)
+            logger.info(f"Created pause predictor: raw range={pause_min*1000:.1f} to {pause_max*1000:.1f}ms, normalized to 0-1")
+        else:
+            pause_values_norm = pause_values
+            logger.info(f"Created pause predictor: constant value={pause_min*1000:.1f}ms")
+    else:
+        pause_values_norm = pause_values
+        if len(pause_values) > 0:
+            logger.info(f"Created pause predictor: mean={np.mean(pause_values)*1000:.1f}ms, range={pause_values.min()*1000:.1f} to {pause_values.max()*1000:.1f}ms")
+
+    # Create predictor: delta functions weighted by pause duration
+    pause = np.zeros(len(meg_times))
+    for word_time, pause_val in zip(word_times_meg, pause_values_norm):
+        idx = np.argmin(np.abs(meg_times - word_time))
+        pause[idx] = pause_val
+
+    return pause
