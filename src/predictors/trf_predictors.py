@@ -81,6 +81,7 @@ def create_meg_audio_envelope(
     meg_raw: 'mne.io.Raw',
     channel_name: str,
     smoothing_sigma_ms: float = 10,
+    normalize: bool = True,
 ) -> np.ndarray:
     """
     Create envelope from MEG auxiliary audio channel.
@@ -93,6 +94,8 @@ def create_meg_audio_envelope(
         Name of MEG audio channel (e.g., 'MISC 007', 'MISC 008')
     smoothing_sigma_ms : float
         Gaussian smoothing width (milliseconds)
+    normalize : bool
+        Normalize envelope to 0-1 range for comparison with external audio
 
     Returns
     -------
@@ -104,6 +107,9 @@ def create_meg_audio_envelope(
     This extracts the envelope from audio recorded directly to the MEG file
     (e.g., from microphones connected to MEG auxiliary inputs).
     Useful for verifying synchronization with external audio.
+
+    The envelope is normalized by default so it can be visually compared with
+    external audio envelopes on the same scale.
     """
     if channel_name not in meg_raw.ch_names:
         raise ValueError(f"Channel {channel_name} not found in MEG data")
@@ -120,7 +126,15 @@ def create_meg_audio_envelope(
         sigma_samples = smoothing_sigma_ms * meg_sfreq / 1000
         envelope_meg = gaussian_filter1d(envelope_meg, sigma_samples)
 
-    logger.info(f"Created MEG audio envelope ({channel_name}): range={envelope_meg.min():.4f} to {envelope_meg.max():.4f}")
+    # Normalize to 0-1 range for visual comparison with external audio
+    if normalize:
+        env_min = envelope_meg.min()
+        env_max = envelope_meg.max()
+        if env_max > env_min:
+            envelope_meg = (envelope_meg - env_min) / (env_max - env_min)
+        logger.info(f"Created MEG audio envelope ({channel_name}): normalized to 0-1 range")
+    else:
+        logger.info(f"Created MEG audio envelope ({channel_name}): range={envelope_meg.min():.4f} to {envelope_meg.max():.4f}")
 
     return envelope_meg
 
