@@ -10,7 +10,7 @@ Predictors added (13 total, grouped by speaker):
 INTERVIEWER (6 channels):
 - MISC_envelope_interviewer: Interviewer audio envelope (external)
 - MISC_envelope_meg_mic7: MEG MISC 007 envelope (interviewer, for sync verification)
-- MISC_f0_interviewer: Interviewer F0 contour
+- MISC_f0_interviewer: Interviewer F0 contour (speaker-masked)
 - MISC_word_onsets_interviewer: Delta functions at interviewer word onsets
 - MISC_surprisal_interviewer: Delta functions weighted by interviewer word surprisal
 - MISC_duration_interviewer: Delta functions weighted by interviewer word duration
@@ -18,7 +18,7 @@ INTERVIEWER (6 channels):
 PARTICIPANT (6 channels):
 - MISC_envelope_participant: Participant audio envelope (external)
 - MISC_envelope_meg_mic8: MEG MISC 008 envelope (participant, for sync verification)
-- MISC_f0_participant: Participant F0 contour
+- MISC_f0_participant: Participant F0 contour (speaker-masked)
 - MISC_word_onsets_participant: Delta functions at participant word onsets
 - MISC_surprisal_participant: Delta functions weighted by participant word surprisal
 - MISC_duration_participant: Delta functions weighted by participant word duration
@@ -330,6 +330,24 @@ def process_subject_run(
     print("  13/13: Speaker...")
     speaker = create_speaker_predictor(env_interviewer, env_participant)
 
+    # Apply speaker-based masking to F0 to remove noise/bleed-through
+    print("\nApplying speaker-based F0 masking...")
+    # Zero interviewer F0 when not speaking (speaker != 1 and speaker != 3)
+    interviewer_active = (speaker == 1) | (speaker == 3)  # Speaking or overlap
+    f0_interviewer_masked = f0_interviewer * interviewer_active
+    n_zeroed_int = np.sum((f0_interviewer > 0) & ~interviewer_active)
+    print(f"  Interviewer F0: Zeroed {n_zeroed_int} samples during non-speech")
+
+    # Zero participant F0 when not speaking (speaker != 2 and speaker != 3)
+    participant_active = (speaker == 2) | (speaker == 3)  # Speaking or overlap
+    f0_participant_masked = f0_participant * participant_active
+    n_zeroed_part = np.sum((f0_participant > 0) & ~participant_active)
+    print(f"  Participant F0: Zeroed {n_zeroed_part} samples during non-speech")
+
+    # Replace original F0 with masked versions
+    f0_interviewer = f0_interviewer_masked
+    f0_participant = f0_participant_masked
+
     # Create info for new channels
     print("\nAdding predictors as MISC channels...")
     # Channels grouped by speaker for easy visualization
@@ -434,12 +452,14 @@ def process_subject_run(
             'f0_interviewer': {
                 'pct_voiced': float(100 * np.sum(f0_interviewer > 0) / len(f0_interviewer)),
                 'normalized': True,
-                'note': 'Voiced F0 normalized to 0-1, unvoiced remains 0',
+                'speaker_masked': True,
+                'note': 'Voiced F0 normalized to 0-1, speaker-masked (zeroed when not speaking)',
             },
             'f0_participant': {
                 'pct_voiced': float(100 * np.sum(f0_participant > 0) / len(f0_participant)),
                 'normalized': True,
-                'note': 'Voiced F0 normalized to 0-1, unvoiced remains 0',
+                'speaker_masked': True,
+                'note': 'Voiced F0 normalized to 0-1, speaker-masked (zeroed when not speaking)',
             },
             'word_onsets_interviewer': {
                 'n_onsets': int(np.sum(word_onsets_interviewer > 0)),
