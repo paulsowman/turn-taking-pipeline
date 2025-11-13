@@ -148,6 +148,7 @@ def create_f0_predictor(
     fmax: float = 400,
     hop_length_ms: float = 10,
     fill_unvoiced: float = 0.0,
+    normalize: bool = True,
 ) -> np.ndarray:
     """
     Create F0 (pitch) predictor at MEG sampling rate.
@@ -170,11 +171,13 @@ def create_f0_predictor(
         Hop length for F0 computation (milliseconds)
     fill_unvoiced : float
         Value to use for unvoiced segments (0.0 or np.nan)
+    normalize : bool
+        Normalize voiced F0 to 0-1 range (0 remains 0 for unvoiced)
 
     Returns
     -------
     f0_meg : np.ndarray
-        F0 at MEG time points
+        F0 at MEG time points (normalized if requested)
     """
     hop_length = int(hop_length_ms * sr / 1000)
 
@@ -199,9 +202,23 @@ def create_f0_predictor(
     # Interpolate to MEG sampling rate
     f0_meg = np.interp(meg_times, f0_times_meg, f0)
 
-    n_voiced = np.sum(f0_meg > 0)
-    pct_voiced = 100 * n_voiced / len(f0_meg)
-    logger.info(f"Created F0 predictor: {len(f0_meg)} samples, {pct_voiced:.1f}% voiced")
+    # Normalize voiced segments to 0-1 if requested
+    if normalize:
+        voiced_mask = f0_meg > 0
+        if np.any(voiced_mask):
+            f0_min = f0_meg[voiced_mask].min()
+            f0_max = f0_meg[voiced_mask].max()
+            if f0_max > f0_min:
+                f0_meg[voiced_mask] = (f0_meg[voiced_mask] - f0_min) / (f0_max - f0_min)
+            n_voiced = np.sum(voiced_mask)
+            pct_voiced = 100 * n_voiced / len(f0_meg)
+            logger.info(f"Created F0 predictor: {len(f0_meg)} samples, {pct_voiced:.1f}% voiced, normalized to 0-1")
+        else:
+            logger.info(f"Created F0 predictor: {len(f0_meg)} samples, 0% voiced (all unvoiced)")
+    else:
+        n_voiced = np.sum(f0_meg > 0)
+        pct_voiced = 100 * n_voiced / len(f0_meg)
+        logger.info(f"Created F0 predictor: {len(f0_meg)} samples, {pct_voiced:.1f}% voiced")
 
     return f0_meg
 
@@ -241,6 +258,7 @@ def create_surprisal_predictor(
     word_times_meg: np.ndarray,
     surprisal_values: np.ndarray,
     meg_times: np.ndarray,
+    normalize: bool = True,
 ) -> np.ndarray:
     """
     Create surprisal predictor (delta functions weighted by surprisal).
@@ -253,19 +271,32 @@ def create_surprisal_predictor(
         Surprisal value for each word
     meg_times : np.ndarray
         MEG time points (seconds)
+    normalize : bool
+        Normalize surprisal values to 0-1 range
 
     Returns
     -------
     surprisal : np.ndarray
-        Delta functions weighted by surprisal
+        Delta functions weighted by surprisal (normalized if requested)
     """
+    # Normalize surprisal values if requested
+    if normalize and len(surprisal_values) > 0:
+        surp_min = surprisal_values.min()
+        surp_max = surprisal_values.max()
+        if surp_max > surp_min:
+            surprisal_values_norm = (surprisal_values - surp_min) / (surp_max - surp_min)
+        else:
+            surprisal_values_norm = surprisal_values
+        logger.info(f"Created surprisal predictor: raw range={surp_min:.2f} to {surp_max:.2f}, normalized to 0-1")
+    else:
+        surprisal_values_norm = surprisal_values
+        logger.info(f"Created surprisal predictor: mean={np.mean(surprisal_values):.2f}, range={surprisal_values.min():.2f} to {surprisal_values.max():.2f}")
+
     surprisal = np.zeros(len(meg_times))
 
-    for word_time, surp_val in zip(word_times_meg, surprisal_values):
+    for word_time, surp_val in zip(word_times_meg, surprisal_values_norm):
         idx = np.argmin(np.abs(meg_times - word_time))
         surprisal[idx] = surp_val
-
-    logger.info(f"Created surprisal predictor: mean={np.mean(surprisal_values):.2f}, range={surprisal_values.min():.2f} to {surprisal_values.max():.2f}")
 
     return surprisal
 
@@ -274,6 +305,7 @@ def create_duration_predictor(
     word_times_meg: np.ndarray,
     word_durations: np.ndarray,
     meg_times: np.ndarray,
+    normalize: bool = True,
 ) -> np.ndarray:
     """
     Create word duration predictor (delta functions weighted by duration).
@@ -286,19 +318,32 @@ def create_duration_predictor(
         Duration of each word (seconds)
     meg_times : np.ndarray
         MEG time points (seconds)
+    normalize : bool
+        Normalize duration values to 0-1 range
 
     Returns
     -------
     duration : np.ndarray
-        Delta functions weighted by word duration
+        Delta functions weighted by word duration (normalized if requested)
     """
+    # Normalize durations if requested
+    if normalize and len(word_durations) > 0:
+        dur_min = word_durations.min()
+        dur_max = word_durations.max()
+        if dur_max > dur_min:
+            word_durations_norm = (word_durations - dur_min) / (dur_max - dur_min)
+        else:
+            word_durations_norm = word_durations
+        logger.info(f"Created duration predictor: raw range={dur_min*1000:.1f} to {dur_max*1000:.1f}ms, normalized to 0-1")
+    else:
+        word_durations_norm = word_durations
+        logger.info(f"Created duration predictor: mean={np.mean(word_durations)*1000:.1f}ms, range={word_durations.min()*1000:.1f} to {word_durations.max()*1000:.1f}ms")
+
     duration = np.zeros(len(meg_times))
 
-    for word_time, dur in zip(word_times_meg, word_durations):
+    for word_time, dur in zip(word_times_meg, word_durations_norm):
         idx = np.argmin(np.abs(meg_times - word_time))
         duration[idx] = dur
-
-    logger.info(f"Created duration predictor: mean={np.mean(word_durations)*1000:.1f}ms, range={word_durations.min()*1000:.1f} to {word_durations.max()*1000:.1f}ms")
 
     return duration
 

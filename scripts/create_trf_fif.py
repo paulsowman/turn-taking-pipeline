@@ -210,28 +210,36 @@ def process_subject_run(
     print("  4/10: Envelope (MEG MIC 8)...")
     env_meg_mic8 = create_meg_audio_envelope(meg_raw, 'MISC 008')
 
-    # 3. F0
+    # 3. F0 (normalized to 0-1)
     print("  5/10: F0 (interviewer)...")
     f0_interviewer = create_f0_predictor(
-        audio_interviewer, sr, meg_times, sync_offset
+        audio_interviewer, sr, meg_times, sync_offset, normalize=True
     )
 
     print("  6/10: F0 (participant)...")
     f0_participant = create_f0_predictor(
-        audio_participant, sr, meg_times, sync_offset
+        audio_participant, sr, meg_times, sync_offset, normalize=True
     )
 
     # 4. Word onsets
     print("  7/10: Word onsets...")
     word_onsets = create_word_onset_predictor(word_times_meg, meg_times)
 
-    # 5. Surprisal
+    # 5. Surprisal (normalized to 0-1)
+    surprisal_raw_stats = None
     if compute_surprisal_flag:
         print("  8/10: Surprisal (GPT-2, this may take a few minutes)...")
         try:
             surprisal_values = compute_word_surprisal(words)
+            # Save raw statistics before normalization
+            surprisal_raw_stats = {
+                'mean': float(np.mean(surprisal_values)),
+                'std': float(np.std(surprisal_values)),
+                'min': float(surprisal_values.min()),
+                'max': float(surprisal_values.max()),
+            }
             surprisal = create_surprisal_predictor(
-                word_times_meg, surprisal_values, meg_times
+                word_times_meg, surprisal_values, meg_times, normalize=True
             )
         except Exception as e:
             print(f"  ⚠ Warning: Surprisal computation failed: {e}")
@@ -241,10 +249,17 @@ def process_subject_run(
         print("  8/10: Surprisal (skipped, using zeros)...")
         surprisal = np.zeros(len(meg_times))
 
-    # 6. Duration
+    # 6. Duration (normalized to 0-1)
     print("  9/10: Duration...")
+    # Save raw statistics before normalization
+    duration_raw_stats = {
+        'mean_ms': float(np.mean(word_durations) * 1000),
+        'std_ms': float(np.std(word_durations) * 1000),
+        'min_ms': float(word_durations.min() * 1000),
+        'max_ms': float(word_durations.max() * 1000),
+    }
     duration = create_duration_predictor(
-        word_times_meg, word_durations, meg_times
+        word_times_meg, word_durations, meg_times, normalize=True
     )
 
     # 7. Speaker
@@ -339,22 +354,37 @@ def process_subject_run(
             },
             'f0_interviewer': {
                 'pct_voiced': float(100 * np.sum(f0_interviewer > 0) / len(f0_interviewer)),
+                'normalized': True,
+                'note': 'Voiced F0 normalized to 0-1, unvoiced remains 0',
             },
             'f0_participant': {
                 'pct_voiced': float(100 * np.sum(f0_participant > 0) / len(f0_participant)),
+                'normalized': True,
+                'note': 'Voiced F0 normalized to 0-1, unvoiced remains 0',
             },
             'word_onsets': {
                 'n_onsets': int(np.sum(word_onsets > 0)),
+                'normalized': False,
+                'note': 'Binary delta functions (0 or 1)',
             },
             'surprisal': {
                 'computed': compute_surprisal_flag,
-                'mean': float(np.mean(surprisal[surprisal > 0])) if np.any(surprisal > 0) else 0.0,
+                'normalized': True,
+                'raw_stats': surprisal_raw_stats if surprisal_raw_stats else None,
+                'note': 'GPT-2 surprisal in nats, normalized to 0-1' if compute_surprisal_flag else 'Not computed (zeros)',
+            },
+            'duration': {
+                'normalized': True,
+                'raw_stats': duration_raw_stats,
+                'note': 'Word durations normalized to 0-1',
             },
             'speaker': {
                 'pct_silence': float(100 * np.sum(speaker == 0) / len(speaker)),
                 'pct_interviewer': float(100 * np.sum(speaker == 1) / len(speaker)),
                 'pct_participant': float(100 * np.sum(speaker == 2) / len(speaker)),
                 'pct_overlap': float(100 * np.sum(speaker == 3) / len(speaker)),
+                'normalized': False,
+                'note': 'Categorical: 0=silence, 1=interviewer, 2=participant, 3=overlap',
             },
         },
     }
