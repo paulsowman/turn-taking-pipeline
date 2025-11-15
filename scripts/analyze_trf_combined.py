@@ -94,6 +94,16 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print("\nExtracting predictors...")
     predictors = {}
 
+    # TODO: Add "closeness to turn boundary" predictor
+    # Compute distance to nearest turn boundary (min of time since last turn, time until next turn)
+    # This would capture boundary-proximal vs. boundary-distal processing effects
+    # Could test if surprisal/prosodic effects are modulated by turn position
+    # Implementation:
+    #   - Extract turn boundaries from MFA data (speaker switches)
+    #   - For each sample: closeness = min(time_since_last_boundary, time_until_next_boundary)
+    #   - Add as continuous predictor: MISC_closeness_to_turn
+    #   - Consider interaction terms: surprisal × closeness, f0_deviation × closeness
+
     # Define which predictors to use based on speaker
     if speaker == 'both':
         predictor_channels = {
