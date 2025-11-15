@@ -61,8 +61,9 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print(f"BAD annotations: {len(raw.annotations)}")
 
     # Convert to eelbrain NDVar (pass file path, not raw object)
+    # Note: BAD annotations will be automatically excluded during boosting
     print("\nConverting to eelbrain format...")
-    meg_data = eelbrain.load.fiff.mne_raw(fif_file, exclude='bads')
+    meg_data = eelbrain.load.fiff.mne_raw(fif_file)
 
     # Extract MEG channels (automatically excludes BAD time segments)
     meg = meg_data.sub(sensor='MEG*')
