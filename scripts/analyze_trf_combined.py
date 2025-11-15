@@ -230,14 +230,39 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     # Generate plots
     if save_plots:
         print("\nGenerating TRF plots...")
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
+        import matplotlib.pyplot as plt
+
         for i, (pred_name, h) in enumerate(zip(predictor_names, h_list)):
             try:
-                fig = eelbrain.plot.TopoButterfly(h)
-                fig.save(output_dir / f'trf_{pred_name}.png', dpi=300)
+                # Use matplotlib backend for static plots
+                p = eelbrain.plot.TopoButterfly(h, vmax=None)
+                p.save(output_dir / f'trf_{pred_name}.png', dpi=300)
                 print(f"  ✓ Saved: trf_{pred_name}.png")
-                fig.close()
+                p.close()
             except Exception as e:
                 print(f"  ✗ Error plotting {pred_name}: {e}")
+                # Try simpler butterfly plot as fallback
+                try:
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    times = h.time.times if hasattr(h.time, 'times') else h.time
+                    # Plot all sensors
+                    ax.plot(times, h.x.T, alpha=0.1, color='gray')
+                    # Plot mean
+                    ax.plot(times, h.x.mean(axis=0), linewidth=2, color='red', label='Mean')
+                    ax.axhline(0, color='k', linestyle='--', alpha=0.3)
+                    ax.axvline(0, color='k', linestyle='--', alpha=0.3)
+                    ax.set_xlabel('Time (s)')
+                    ax.set_ylabel('TRF amplitude')
+                    ax.set_title(f'{pred_name} TRF')
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+                    fig.savefig(output_dir / f'trf_{pred_name}.png', dpi=300, bbox_inches='tight')
+                    plt.close(fig)
+                    print(f"  ✓ Saved (simple plot): trf_{pred_name}.png")
+                except Exception as e2:
+                    print(f"  ✗ Fallback plotting also failed: {e2}")
 
     # Report timing
     elapsed_time = time.time() - start_time
