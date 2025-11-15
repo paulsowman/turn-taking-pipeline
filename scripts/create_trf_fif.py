@@ -5,6 +5,21 @@ Create TRF Analysis FIF Files
 Adds TRF predictor time series as MISC channels to MEG .fif files.
 All predictors are at MEG sampling rate (1000 Hz) in MEG timebase.
 
+TODO: Add downsampling to 100 Hz for computational efficiency
+--------------------------------------------------------------
+For future pipeline regeneration, downsample MEG data BEFORE creating predictors:
+- Load MEG at native 1000 Hz
+- Downsample to 100 Hz (10ms resolution, 10x speedup for TRF fitting)
+- Create all predictors at 100 Hz timebase
+- Word onsets placed at 10ms grid (vs current 1ms impulses)
+- More principled than downsampling post-hoc at analysis time
+- Avoids anti-aliasing filter spreading sharp impulses
+
+Benefits:
+- TRF fitting: ~90 min → ~9 min per condition (conversation)
+- Clean predictor encoding at target sampling rate
+- 10ms resolution adequate for word-level analysis (~200ms between words)
+
 Predictors added (19 total, grouped by speaker):
 
 INTERVIEWER (9 channels):
