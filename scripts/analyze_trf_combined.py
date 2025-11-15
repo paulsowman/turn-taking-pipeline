@@ -63,6 +63,13 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print(f"Total channels: {len(raw.ch_names)}")
     print(f"BAD annotations: {len(raw.annotations)}")
 
+    # Downsample for computational efficiency (following existing TRF code)
+    original_sfreq = raw.info['sfreq']
+    if original_sfreq > 200:
+        print(f"\nDownsampling from {original_sfreq} Hz to 200 Hz...")
+        raw.resample(200.0, npad='auto', verbose=False)
+        print(f"  ✓ Downsampled (5x speedup for TRF fitting)")
+
     # Convert to eelbrain NDVar for continuous data
     # Note: BAD annotations will be automatically excluded during boosting
     print("\nConverting to eelbrain format...")
@@ -168,8 +175,9 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print("="*70)
 
     # Estimate time based on data duration
+    # At 200 Hz: roughly 0.016 min per min of data (was 0.08 at 1000 Hz)
     data_duration_min = meg_data_array.shape[1] / raw.info['sfreq'] / 60
-    estimated_time_min = data_duration_min * 0.08  # Roughly 0.08 min per min of data
+    estimated_time_min = data_duration_min * 0.016
 
     print(f"Data duration: {data_duration_min:.1f} minutes")
     print(f"Estimated fitting time: {estimated_time_min:.0f}-{estimated_time_min*1.5:.0f} minutes")
