@@ -66,8 +66,22 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     # Load as eelbrain Dataset (contains all channels as NDVars)
     ds = eelbrain.load.fiff.events(fif_file, events=None)
 
-    # Get the continuous MEG data
-    meg_data = ds['meg']
+    # Check what keys are available
+    print(f"Dataset keys: {list(ds.keys())}")
+
+    # Get the continuous MEG data - try 'mag' for magnetometer channels
+    if 'mag' in ds:
+        meg_data = ds['mag']
+    elif 'meg' in ds:
+        meg_data = ds['meg']
+    else:
+        # Try to find the data key
+        data_keys = [k for k in ds.keys() if k not in ['index', 'trigger', 'i_start']]
+        print(f"Available data keys: {data_keys}")
+        if len(data_keys) > 0:
+            meg_data = ds[data_keys[0]]
+        else:
+            raise ValueError(f"Cannot find MEG data in Dataset. Available keys: {list(ds.keys())}")
 
     # Extract MEG channels only (exclude MISC)
     meg = meg_data.sub(sensor='MEG*')
