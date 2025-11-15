@@ -60,12 +60,16 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print(f"Total channels: {len(raw.ch_names)}")
     print(f"BAD annotations: {len(raw.annotations)}")
 
-    # Convert to eelbrain NDVar (pass file path, not raw object)
+    # Convert to eelbrain NDVar
     # Note: BAD annotations will be automatically excluded during boosting
     print("\nConverting to eelbrain format...")
-    meg_data = eelbrain.load.fiff.mne_raw(fif_file)
+    # Load as eelbrain Dataset (contains all channels as NDVars)
+    ds = eelbrain.load.fiff.events(fif_file, events=None)
 
-    # Extract MEG channels (automatically excludes BAD time segments)
+    # Get the continuous MEG data
+    meg_data = ds['meg']
+
+    # Extract MEG channels only (exclude MISC)
     meg = meg_data.sub(sensor='MEG*')
     print(f"MEG data shape: {meg.x.shape}")
 
@@ -109,9 +113,10 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
 
     for name, ch in predictor_channels.items():
         if ch in available_channels:
-            predictors[name] = meg_data[ch]
+            # Extract this channel as NDVar
+            predictors[name] = meg_data.sub(sensor=ch)
             # Check non-zero values
-            n_nonzero = np.sum(meg_data[ch].x != 0)
+            n_nonzero = np.sum(predictors[name].x != 0)
             print(f"  {name:25s}: {n_nonzero:6d} non-zero samples")
         else:
             print(f"  WARNING: {ch} not found")
