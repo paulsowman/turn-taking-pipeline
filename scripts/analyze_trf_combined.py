@@ -21,6 +21,7 @@ import numpy as np
 from pathlib import Path
 import argparse
 import sys
+import time
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -45,6 +46,7 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     -------
     trf : eelbrain TRF object
     """
+    start_time = time.time()
 
     print(f"\n{'='*70}")
     print(f"TRF ANALYSIS: {subject} - {condition.upper()} - {speaker.upper()}")
@@ -179,8 +181,14 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         return None
 
     print("\n✓ TRF model fitted!")
-    print(f"  Cross-validated r: {trf.r:.4f}")
-    print(f"  Cross-validated r²: {trf.r**2:.4f}")
+
+    # Get mean correlation across sensors
+    r_mean = trf.r.mean() if hasattr(trf.r, 'mean') else float(trf.r)
+    r_max = trf.r.max() if hasattr(trf.r, 'max') else float(trf.r)
+
+    print(f"  Cross-validated r (mean): {r_mean:.4f}")
+    print(f"  Cross-validated r (max):  {r_max:.4f}")
+    print(f"  Cross-validated r² (mean): {r_mean**2:.4f}")
 
     # Save results
     output_dir = Path('outputs/trf_analysis') / subject / condition / speaker
@@ -219,6 +227,10 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
             except Exception as e:
                 print(f"  ✗ Error plotting {pred_name}: {e}")
 
+    # Report timing
+    elapsed_time = time.time() - start_time
+    print(f"\n⏱ Analysis completed in {elapsed_time/60:.1f} minutes ({elapsed_time:.0f}s)")
+
     return trf
 
 
@@ -237,6 +249,7 @@ def compare_conditions(subject, speaker='participant'):
     -------
     trf_conv, trf_nursery : tuple of TRF objects
     """
+    start_time = time.time()
 
     print(f"\n{'='*70}")
     print(f"COMPARING CONDITIONS - {speaker.upper()}")
@@ -254,10 +267,15 @@ def compare_conditions(subject, speaker='participant'):
     print("\n" + "="*70)
     print("CONDITION COMPARISON")
     print("="*70)
+
+    # Get mean r values
+    r_conv = trf_conv.r.mean() if hasattr(trf_conv.r, 'mean') else float(trf_conv.r)
+    r_nursery = trf_nursery.r.mean() if hasattr(trf_nursery.r, 'mean') else float(trf_nursery.r)
+
     print(f"\nModel Performance:")
-    print(f"  Conversation r²:    {trf_conv.r**2:.4f}")
-    print(f"  Nursery Rhyme r²:   {trf_nursery.r**2:.4f}")
-    print(f"  Difference:         {(trf_conv.r**2 - trf_nursery.r**2):.4f}")
+    print(f"  Conversation r²:    {r_conv**2:.4f}")
+    print(f"  Nursery Rhyme r²:   {r_nursery**2:.4f}")
+    print(f"  Difference:         {(r_conv**2 - r_nursery**2):.4f}")
 
     # Compare predictor effects
     # Predictors are: word_onsets, surprisal, f0_deviation, duration_deviation, pause
@@ -293,6 +311,10 @@ def compare_conditions(subject, speaker='participant'):
         print(f"  Nursery Rhyme:      {nursery_f0:.4f}")
         print(f"  Ratio (Conv/Nurs):  {conv_f0/nursery_f0:.2f}x")
 
+    # Report total timing
+    total_time = time.time() - start_time
+    print(f"\n⏱ Total comparison completed in {total_time/60:.1f} minutes ({total_time:.0f}s)")
+
     return trf_conv, trf_nursery
 
 
@@ -327,6 +349,8 @@ def main():
     )
 
     args = parser.parse_args()
+
+    overall_start = time.time()
 
     if args.compare:
         # Compare both conditions
@@ -365,6 +389,19 @@ def main():
     print("     - Surprisal: ~200-400ms (N400-like)")
     print("     - F0 deviation: ~100-200ms (auditory)")
     print("     - Stronger effects in conversation vs. nursery rhyme")
+
+    # Final timing report
+    total_elapsed = time.time() - overall_start
+    print(f"\n{'='*70}")
+    print(f"⏱ TOTAL RUNTIME: {total_elapsed/60:.1f} minutes ({total_elapsed:.0f}s)")
+    print(f"{'='*70}")
+
+    # Estimate for all subjects
+    if args.compare:
+        print(f"\n📊 Estimated time for all subjects:")
+        for n_subjects in [5, 10, 20]:
+            estimated = (total_elapsed * n_subjects) / 60
+            print(f"  {n_subjects} subjects: ~{estimated:.0f} minutes ({estimated/60:.1f} hours)")
 
     return 0
 
