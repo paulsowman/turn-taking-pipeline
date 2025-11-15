@@ -22,6 +22,7 @@ from pathlib import Path
 import argparse
 import sys
 import time
+import pickle
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -207,7 +208,8 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print(f"\nSaving results to: {output_dir}")
 
     # Save TRF model
-    trf.save(output_dir / 'trf_model.pickle')
+    with open(output_dir / 'trf_model.pickle', 'wb') as f:
+        pickle.dump(trf, f)
     print(f"  ✓ Saved TRF model")
 
     # Find and print peak latencies
