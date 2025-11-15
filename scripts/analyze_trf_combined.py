@@ -61,14 +61,8 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print(f"Loaded: {fif_file}")
     print(f"Duration: {raw.times[-1]:.1f}s")
     print(f"Total channels: {len(raw.ch_names)}")
+    print(f"Sampling rate: {raw.info['sfreq']} Hz")
     print(f"BAD annotations: {len(raw.annotations)}")
-
-    # Downsample for computational efficiency (following existing TRF code)
-    original_sfreq = raw.info['sfreq']
-    if original_sfreq > 200:
-        print(f"\nDownsampling from {original_sfreq} Hz to 200 Hz...")
-        raw.resample(200.0, npad='auto', verbose=False)
-        print(f"  ✓ Downsampled (5x speedup for TRF fitting)")
 
     # Convert to eelbrain NDVar for continuous data
     # Note: BAD annotations will be automatically excluded during boosting
