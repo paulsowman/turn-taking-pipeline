@@ -166,7 +166,14 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print("\n" + "="*70)
     print("FITTING TRF MODEL")
     print("="*70)
-    print("This may take 5-15 minutes depending on data length...")
+
+    # Estimate time based on data duration
+    data_duration_min = meg_data_array.shape[1] / raw.info['sfreq'] / 60
+    estimated_time_min = data_duration_min * 0.08  # Roughly 0.08 min per min of data
+
+    print(f"Data duration: {data_duration_min:.1f} minutes")
+    print(f"Estimated fitting time: {estimated_time_min:.0f}-{estimated_time_min*1.5:.0f} minutes")
+    print("(Progress updates will appear below)")
     print("\nParameters:")
     print("  - Time window: -100ms to +600ms")
     print("  - Basis function width: 50ms")
