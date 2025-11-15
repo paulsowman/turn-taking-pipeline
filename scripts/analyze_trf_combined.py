@@ -53,38 +53,41 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     # Load combined FIF file
     fif_file = f'outputs/trf_combined/{subject}/{subject}_{condition}_trf_raw.fif'
 
-    # First check file info with MNE
-    raw = mne.io.read_raw_fif(fif_file, preload=False, verbose=False)
+    # Load with MNE and preload data
+    raw = mne.io.read_raw_fif(fif_file, preload=True, verbose=False)
     print(f"Loaded: {fif_file}")
     print(f"Duration: {raw.times[-1]:.1f}s")
     print(f"Total channels: {len(raw.ch_names)}")
     print(f"BAD annotations: {len(raw.annotations)}")
 
-    # Convert to eelbrain NDVar
+    # Convert to eelbrain NDVar for continuous data
     # Note: BAD annotations will be automatically excluded during boosting
     print("\nConverting to eelbrain format...")
-    # Load as eelbrain Dataset (contains all channels as NDVars)
-    ds = eelbrain.load.fiff.events(fif_file, events=None)
 
-    # Check what keys are available
-    print(f"Dataset keys: {list(ds.keys())}")
+    # Get MEG channel indices
+    meg_picks = mne.pick_types(raw.info, meg=True, exclude=[])
+    meg_ch_names = [raw.ch_names[i] for i in meg_picks]
+    print(f"Found {len(meg_ch_names)} MEG channels")
 
-    # Get the continuous MEG data - try 'mag' for magnetometer channels
-    if 'mag' in ds:
-        meg_data = ds['mag']
-    elif 'meg' in ds:
-        meg_data = ds['meg']
-    else:
-        # Try to find the data key
-        data_keys = [k for k in ds.keys() if k not in ['index', 'trigger', 'i_start']]
-        print(f"Available data keys: {data_keys}")
-        if len(data_keys) > 0:
-            meg_data = ds[data_keys[0]]
-        else:
-            raise ValueError(f"Cannot find MEG data in Dataset. Available keys: {list(ds.keys())}")
+    # Extract MEG data and convert to eelbrain NDVar
+    meg_data_array, times = raw[meg_picks, :]
 
-    # Extract MEG channels only (exclude MISC)
-    meg = meg_data.sub(sensor='MEG*')
+    # Create eelbrain NDVar from numpy array
+    # We need to create proper dimensions for time and sensor
+    from eelbrain import UTS, Sensor, NDVar
+
+    # Create time dimension
+    time_dim = UTS(tmin=times[0], tstep=1.0/raw.info['sfreq'], nsamples=len(times))
+
+    # Create sensor dimension from MNE info
+    sensor_dim = Sensor.from_mne_epochs(mne.EpochsArray(
+        meg_data_array[np.newaxis, :, :],
+        raw.info.copy().pick_channels(meg_ch_names),
+        tmin=0
+    ))
+
+    # Create NDVar
+    meg = NDVar(meg_data_array, dims=(sensor_dim, time_dim), name='meg')
     print(f"MEG data shape: {meg.x.shape}")
 
     # Extract predictors
@@ -127,10 +130,15 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
 
     for name, ch in predictor_channels.items():
         if ch in available_channels:
-            # Extract this channel as NDVar
-            predictors[name] = meg_data.sub(sensor=ch)
+            # Extract this channel data as numpy array
+            ch_idx = raw.ch_names.index(ch)
+            pred_data, _ = raw[ch_idx, :]
+
+            # Convert to eelbrain NDVar (1D time series)
+            predictors[name] = NDVar(pred_data[0], dims=(time_dim,), name=name)
+
             # Check non-zero values
-            n_nonzero = np.sum(predictors[name].x != 0)
+            n_nonzero = np.sum(pred_data != 0)
             print(f"  {name:25s}: {n_nonzero:6d} non-zero samples")
         else:
             print(f"  WARNING: {ch} not found")
