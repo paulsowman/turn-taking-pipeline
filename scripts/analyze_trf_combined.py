@@ -72,22 +72,20 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     # Extract MEG data and convert to eelbrain NDVar
     meg_data_array, times = raw[meg_picks, :]
 
-    # Create eelbrain NDVar from numpy array
-    # We need to create proper dimensions for time and sensor
-    from eelbrain import UTS, Sensor, NDVar
+    # Create time dimension (following existing TRF code pattern)
+    time_dim = eelbrain.UTS(0, 1.0/raw.info['sfreq'], meg_data_array.shape[1])
 
-    # Create time dimension
-    time_dim = UTS(tmin=times[0], tstep=1.0/raw.info['sfreq'], nsamples=len(times))
-
-    # Create sensor dimension from MNE info
-    sensor_dim = Sensor.from_mne_epochs(mne.EpochsArray(
-        meg_data_array[np.newaxis, :, :],
-        raw.info.copy().pick_channels(meg_ch_names),
-        tmin=0
-    ))
+    # Create sensor dimension from MNE info (following existing TRF code)
+    ch_info = mne.pick_info(raw.info, meg_picks)
+    try:
+        sensor_dim = eelbrain.load.mne.sensor_dim(ch_info)
+        print("  Using eelbrain sensor dimension")
+    except (AttributeError, TypeError):
+        sensor_dim = eelbrain.Case
+        print("  Using Case dimension (fallback)")
 
     # Create NDVar
-    meg = NDVar(meg_data_array, dims=(sensor_dim, time_dim), name='meg')
+    meg = eelbrain.NDVar(meg_data_array, dims=(sensor_dim, time_dim), name='meg')
     print(f"MEG data shape: {meg.x.shape}")
 
     # Extract predictors
@@ -135,7 +133,7 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
             pred_data, _ = raw[ch_idx, :]
 
             # Convert to eelbrain NDVar (1D time series)
-            predictors[name] = NDVar(pred_data[0], dims=(time_dim,), name=name)
+            predictors[name] = eelbrain.NDVar(pred_data[0], dims=(time_dim,), name=name)
 
             # Check non-zero values
             n_nonzero = np.sum(pred_data != 0)
