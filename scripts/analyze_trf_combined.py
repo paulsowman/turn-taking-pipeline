@@ -52,16 +52,17 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
 
     # Load combined FIF file
     fif_file = f'outputs/trf_combined/{subject}/{subject}_{condition}_trf_raw.fif'
-    raw = mne.io.read_raw_fif(fif_file, preload=True)
 
+    # First check file info with MNE
+    raw = mne.io.read_raw_fif(fif_file, preload=False, verbose=False)
     print(f"Loaded: {fif_file}")
     print(f"Duration: {raw.times[-1]:.1f}s")
     print(f"Total channels: {len(raw.ch_names)}")
     print(f"BAD annotations: {len(raw.annotations)}")
 
-    # Convert to eelbrain NDVar
+    # Convert to eelbrain NDVar (pass file path, not raw object)
     print("\nConverting to eelbrain format...")
-    meg_data = eelbrain.load.fiff.mne_raw(raw, exclude='bads')
+    meg_data = eelbrain.load.fiff.mne_raw(fif_file, exclude='bads')
 
     # Extract MEG channels (automatically excludes BAD time segments)
     meg = meg_data.sub(sensor='MEG*')
@@ -102,8 +103,11 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
             'pause': 'MISC_pause_participant',
         }
 
+    # Get available channel names from raw file
+    available_channels = raw.ch_names
+
     for name, ch in predictor_channels.items():
-        if ch in raw.ch_names:
+        if ch in available_channels:
             predictors[name] = meg_data[ch]
             # Check non-zero values
             n_nonzero = np.sum(meg_data[ch].x != 0)
