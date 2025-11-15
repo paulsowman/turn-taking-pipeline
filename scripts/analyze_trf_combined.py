@@ -145,6 +145,10 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         print("\n✗ ERROR: No predictors found!")
         return None
 
+    # Convert predictors dict to tuple (eelbrain expects tuple/list)
+    predictor_names = list(predictors.keys())
+    predictor_ndvars = tuple(predictors.values())
+
     # Fit TRF model
     print("\n" + "="*70)
     print("FITTING TRF MODEL")
@@ -160,7 +164,7 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     try:
         trf = eelbrain.boosting(
             meg,
-            predictors,
+            predictor_ndvars,  # Pass as tuple, not dict
             tstart=-0.100,  # Start 100ms before predictor
             tstop=0.600,    # End 600ms after predictor
             basis=0.050,    # 50ms basis function
@@ -190,27 +194,30 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
 
     # Find and print peak latencies
     print("\nTRF Peak Latencies:")
-    for pred_name in predictors.keys():
-        if pred_name in trf.h_scaled:
-            h = trf.h_scaled[pred_name]
-            # Find peak across all sensors
-            peak_idx = np.argmax(np.abs(h.x).max(axis=1))
-            peak_time = h.time[peak_idx]
-            peak_val = np.abs(h.x).max()
-            print(f"  {pred_name:25s}: {peak_time*1000:6.1f}ms (amplitude: {peak_val:.4f})")
+    # When multiple predictors passed as tuple, trf.h is a tuple indexed by position
+    if isinstance(trf.h, tuple):
+        h_list = trf.h
+    else:
+        h_list = [trf.h]
+
+    for i, (pred_name, h) in enumerate(zip(predictor_names, h_list)):
+        # Find peak across all sensors
+        peak_idx = np.argmax(np.abs(h.x).max(axis=1))
+        peak_time = h.time.times[peak_idx] if hasattr(h.time, 'times') else h.time[peak_idx]
+        peak_val = np.abs(h.x).max()
+        print(f"  {pred_name:25s}: {peak_time*1000:6.1f}ms (amplitude: {peak_val:.4f})")
 
     # Generate plots
     if save_plots:
         print("\nGenerating TRF plots...")
-        for pred_name in predictors.keys():
-            if pred_name in trf.h:
-                try:
-                    fig = eelbrain.plot.TopoButterfly(trf.h[pred_name])
-                    fig.save(output_dir / f'trf_{pred_name}.png', dpi=300)
-                    print(f"  ✓ Saved: trf_{pred_name}.png")
-                    fig.close()
-                except Exception as e:
-                    print(f"  ✗ Error plotting {pred_name}: {e}")
+        for i, (pred_name, h) in enumerate(zip(predictor_names, h_list)):
+            try:
+                fig = eelbrain.plot.TopoButterfly(h)
+                fig.save(output_dir / f'trf_{pred_name}.png', dpi=300)
+                print(f"  ✓ Saved: trf_{pred_name}.png")
+                fig.close()
+            except Exception as e:
+                print(f"  ✗ Error plotting {pred_name}: {e}")
 
     return trf
 
@@ -252,12 +259,18 @@ def compare_conditions(subject, speaker='participant'):
     print(f"  Nursery Rhyme r²:   {trf_nursery.r**2:.4f}")
     print(f"  Difference:         {(trf_conv.r**2 - trf_nursery.r**2):.4f}")
 
-    # Compare surprisal effects
-    surprisal_key = 'surprisal' if speaker != 'both' else 'surprisal_part'
+    # Compare predictor effects
+    # Predictors are: word_onsets, surprisal, f0_deviation, duration_deviation, pause
+    # Index 1 is surprisal, index 2 is f0_deviation
 
-    if surprisal_key in trf_conv.h_scaled and surprisal_key in trf_nursery.h_scaled:
-        conv_peak = np.abs(trf_conv.h_scaled[surprisal_key].x).max()
-        nursery_peak = np.abs(trf_nursery.h_scaled[surprisal_key].x).max()
+    # Get TRF kernels as lists (handle both tuple and single)
+    conv_h = trf_conv.h if isinstance(trf_conv.h, tuple) else [trf_conv.h]
+    nursery_h = trf_nursery.h if isinstance(trf_nursery.h, tuple) else [trf_nursery.h]
+
+    # Compare surprisal effects (index 1)
+    if len(conv_h) > 1 and len(nursery_h) > 1:
+        conv_peak = np.abs(conv_h[1].x).max()  # surprisal is index 1
+        nursery_peak = np.abs(nursery_h[1].x).max()
 
         print(f"\nSurprisal Effect Amplitude:")
         print(f"  Conversation:       {conv_peak:.4f}")
@@ -270,12 +283,10 @@ def compare_conditions(subject, speaker='participant'):
         else:
             print(f"  ⚠ Unexpected: stronger surprisal in nursery rhyme")
 
-    # Compare prosodic deviation effects
-    f0_key = 'f0_deviation' if speaker != 'both' else 'f0_deviation_part'
-
-    if f0_key in trf_conv.h_scaled and f0_key in trf_nursery.h_scaled:
-        conv_f0 = np.abs(trf_conv.h_scaled[f0_key].x).max()
-        nursery_f0 = np.abs(trf_nursery.h_scaled[f0_key].x).max()
+    # Compare F0 deviation effects (index 2)
+    if len(conv_h) > 2 and len(nursery_h) > 2:
+        conv_f0 = np.abs(conv_h[2].x).max()  # f0_deviation is index 2
+        nursery_f0 = np.abs(nursery_h[2].x).max()
 
         print(f"\nF0 Deviation Effect Amplitude:")
         print(f"  Conversation:       {conv_f0:.4f}")
