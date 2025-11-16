@@ -3,22 +3,21 @@
 Create TRF Analysis FIF Files
 
 Adds TRF predictor time series as MISC channels to MEG .fif files.
-All predictors are at MEG sampling rate (1000 Hz) in MEG timebase.
+All predictors are created at 100 Hz (downsampled from native 1000 Hz).
 
-TODO: Add downsampling to 100 Hz for computational efficiency
---------------------------------------------------------------
-For future pipeline regeneration, downsample MEG data BEFORE creating predictors:
+Downsampling Strategy:
+----------------------
 - Load MEG at native 1000 Hz
-- Downsample to 100 Hz (10ms resolution, 10x speedup for TRF fitting)
+- Downsample to 100 Hz BEFORE creating predictors (10ms resolution)
 - Create all predictors at 100 Hz timebase
-- Word onsets placed at 10ms grid (vs current 1ms impulses)
-- More principled than downsampling post-hoc at analysis time
-- Avoids anti-aliasing filter spreading sharp impulses
+- Word onsets placed at 10ms grid (vs 1ms at 1000 Hz)
+- Anti-aliasing filter applied during resampling
 
 Benefits:
-- TRF fitting: ~90 min → ~9 min per condition (conversation)
+- TRF fitting: ~90 min → ~9 min per condition (10x speedup)
 - Clean predictor encoding at target sampling rate
 - 10ms resolution adequate for word-level analysis (~200ms between words)
+- No post-hoc downsampling artifacts (predictor impulses stay clean)
 
 Predictors added (19 total, grouped by speaker):
 
@@ -153,7 +152,16 @@ def process_subject_run(
 
     # Load MEG data
     print("Loading MEG data...")
-    meg_raw = mne.io.read_raw_fif(paths['meg_raw'], preload=False, verbose=False)
+    meg_raw = mne.io.read_raw_fif(paths['meg_raw'], preload=True, verbose=False)
+
+    # Downsample to 100 Hz for computational efficiency (TODO implementation from docstring)
+    target_sfreq = 100.0
+    if meg_raw.info['sfreq'] > target_sfreq:
+        original_sfreq = meg_raw.info['sfreq']
+        print(f"  Downsampling from {original_sfreq:.0f} Hz to {target_sfreq:.0f} Hz...")
+        meg_raw.resample(target_sfreq, npad='auto', verbose=False)
+        print(f"  ✓ Downsampled (10x speedup for TRF fitting)")
+
     meg_times = meg_raw.times
     meg_sfreq = meg_raw.info['sfreq']
     print(f"  MEG: {len(meg_times)} samples @ {meg_sfreq} Hz")
