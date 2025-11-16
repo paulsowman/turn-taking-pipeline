@@ -5,6 +5,11 @@ TRF Analysis on Combined Conversation Data
 Fits Temporal Response Function (TRF) models using eelbrain's boosted regression
 to relate linguistic/prosodic predictors to MEG responses.
 
+Features:
+- Automatic polarity alignment using M100 window (80-150ms)
+- Dual visualization: polarity-aligned mean + RMS magnitude
+- Handles opposite sensor polarities that would otherwise average to near-zero
+
 Usage:
     # Analyze single condition
     python scripts/analyze_trf_combined.py sub-01 --condition conversation
@@ -14,6 +19,11 @@ Usage:
 
     # Analyze both speakers
     python scripts/analyze_trf_combined.py sub-01 --compare --speaker both
+
+Outputs:
+    trf_{predictor}.png        - Eelbrain TopoButterfly plot
+    trf_{predictor}_dual.png   - Dual plot: polarity-aligned + RMS
+    trf_model.pickle           - Fitted TRF model
 """
 import eelbrain
 import mne
@@ -26,6 +36,71 @@ import pickle
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+
+def align_sensor_polarities(kernel_data, times, m100_window=(0.08, 0.15)):
+    """
+    Align sensor polarities by flipping those with negative peaks in M100 window.
+
+    Uses a principled window around the expected M100 auditory response (80-150ms)
+    rather than searching the entire time range, which avoids being influenced by
+    late artifacts or edge effects.
+
+    Parameters
+    ----------
+    kernel_data : ndarray
+        Shape (n_sensors, n_times)
+    times : ndarray
+        Time axis in seconds
+    m100_window : tuple
+        (start, end) time window in seconds for finding peak (default: 0.08-0.15s)
+
+    Returns
+    -------
+    aligned_mean : ndarray
+        Polarity-aligned mean across sensors, shape (n_times,)
+    n_flipped : int
+        Number of sensors that were flipped
+    """
+    data = kernel_data.copy()
+    n_sensors = data.shape[0]
+    n_flipped = 0
+
+    # Find indices for M100 window
+    m100_mask = (times >= m100_window[0]) & (times <= m100_window[1])
+
+    for i in range(n_sensors):
+        # Find peak only within M100 window
+        m100_data = data[i, m100_mask]
+        if len(m100_data) == 0:
+            continue  # Skip if window is empty
+
+        peak_idx_in_window = np.argmax(np.abs(m100_data))
+        peak_value = m100_data[peak_idx_in_window]
+
+        # If peak is negative, flip the entire sensor
+        if peak_value < 0:
+            data[i, :] *= -1
+            n_flipped += 1
+
+    return np.mean(data, axis=0), n_flipped
+
+
+def compute_rms_across_sensors(kernel_data):
+    """
+    Compute RMS across sensors at each timepoint.
+
+    Parameters
+    ----------
+    kernel_data : ndarray
+        Shape (n_sensors, n_times)
+
+    Returns
+    -------
+    ndarray
+        RMS values, shape (n_times,)
+    """
+    return np.sqrt(np.mean(kernel_data**2, axis=0))
 
 
 def analyze_condition(subject, condition, speaker='participant', save_plots=True):
@@ -257,26 +332,48 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
                 p.close()
             except Exception as e:
                 print(f"  ✗ Error plotting {pred_name}: {e}")
-                # Try simpler butterfly plot as fallback
-                try:
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    times = h.time.times if hasattr(h.time, 'times') else h.time
-                    # Plot all sensors
-                    ax.plot(times, h.x.T, alpha=0.1, color='gray')
-                    # Plot mean
-                    ax.plot(times, h.x.mean(axis=0), linewidth=2, color='red', label='Mean')
-                    ax.axhline(0, color='k', linestyle='--', alpha=0.3)
-                    ax.axvline(0, color='k', linestyle='--', alpha=0.3)
-                    ax.set_xlabel('Time (s)')
-                    ax.set_ylabel('TRF amplitude')
-                    ax.set_title(f'{pred_name} TRF')
-                    ax.legend()
-                    ax.grid(True, alpha=0.3)
-                    fig.savefig(output_dir / f'trf_{pred_name}.png', dpi=300, bbox_inches='tight')
-                    plt.close(fig)
-                    print(f"  ✓ Saved (simple plot): trf_{pred_name}.png")
-                except Exception as e2:
-                    print(f"  ✗ Fallback plotting also failed: {e2}")
+
+            # Always create dual plot (polarity-aligned + RMS)
+            try:
+                fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+                times = h.time.times if hasattr(h.time, 'times') else h.time
+                kernel_data = h.x  # Shape: (n_sensors, n_times)
+
+                # Top panel: Polarity-aligned mean
+                ax = axes[0]
+                aligned_mean, n_flipped = align_sensor_polarities(kernel_data, times)
+
+                # Plot individual sensors (faint)
+                ax.plot(times, kernel_data.T, alpha=0.05, color='gray', linewidth=0.5)
+                # Plot polarity-aligned mean
+                ax.plot(times, aligned_mean, linewidth=2, color='red', label='Polarity-aligned mean')
+                ax.axhline(0, color='k', linestyle='--', alpha=0.3)
+                ax.axvline(0, color='k', linestyle='--', alpha=0.3)
+                ax.set_xlabel('Time (s)')
+                ax.set_ylabel('TRF amplitude')
+                ax.set_title(f'{pred_name} - Polarity-Aligned Mean\n({n_flipped}/{kernel_data.shape[0]} sensors flipped based on M100 window)')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+
+                # Bottom panel: RMS magnitude (polarity-independent)
+                ax = axes[1]
+                rms = compute_rms_across_sensors(kernel_data)
+
+                ax.plot(times, rms, linewidth=2, color='blue', label='RMS across sensors')
+                ax.axvline(0, color='k', linestyle='--', alpha=0.3)
+                ax.set_xlabel('Time (s)')
+                ax.set_ylabel('RMS amplitude')
+                ax.set_title(f'{pred_name} - RMS Magnitude (polarity-independent)')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                ax.set_ylim(bottom=0)  # RMS is always non-negative
+
+                plt.tight_layout()
+                fig.savefig(output_dir / f'trf_{pred_name}_dual.png', dpi=300, bbox_inches='tight')
+                plt.close(fig)
+                print(f"  ✓ Saved dual plot: trf_{pred_name}_dual.png ({n_flipped}/{kernel_data.shape[0]} sensors flipped)")
+            except Exception as e2:
+                print(f"  ✗ Dual plot failed: {e2}")
 
     # Report timing
     elapsed_time = time.time() - start_time
