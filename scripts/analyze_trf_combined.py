@@ -168,12 +168,14 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print("FITTING TRF MODEL")
     print("="*70)
 
-    # Estimate time based on data duration
-    # At 1000 Hz: roughly 0.08 min per min of data (will be 0.008 at 100 Hz after downsampling)
+    # Estimate time based on data duration and sampling rate
+    # Empirically: ~0.08 min/min at 1000 Hz, scales linearly with sampling rate
     data_duration_min = meg_data_array.shape[1] / raw.info['sfreq'] / 60
-    estimated_time_min = data_duration_min * 0.08
+    time_per_min_factor = 0.08 * (raw.info['sfreq'] / 1000)  # Scale with sampling rate
+    estimated_time_min = data_duration_min * time_per_min_factor
 
     print(f"Data duration: {data_duration_min:.1f} minutes")
+    print(f"Sampling rate: {raw.info['sfreq']:.0f} Hz")
     print(f"Estimated fitting time: {estimated_time_min:.0f}-{estimated_time_min*1.5:.0f} minutes")
     print("(Progress updates will appear below)")
     print("\nParameters:")
