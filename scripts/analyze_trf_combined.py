@@ -176,7 +176,10 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
 
     print(f"Data duration: {data_duration_min:.1f} minutes")
     print(f"Sampling rate: {raw.info['sfreq']:.0f} Hz")
-    print(f"Estimated fitting time: {estimated_time_min:.0f}-{estimated_time_min*1.5:.0f} minutes")
+    if estimated_time_min < 1:
+        print(f"Estimated fitting time: <1 minute")
+    else:
+        print(f"Estimated fitting time: ~{estimated_time_min:.1f} minutes")
     print("(Progress updates will appear below)")
     print("\nParameters:")
     print("  - Time window: -100ms to +600ms")
