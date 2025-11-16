@@ -169,9 +169,9 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print("="*70)
 
     # Estimate time based on data duration
-    # At 200 Hz: roughly 0.016 min per min of data (was 0.08 at 1000 Hz)
+    # At 1000 Hz: roughly 0.08 min per min of data (will be 0.008 at 100 Hz after downsampling)
     data_duration_min = meg_data_array.shape[1] / raw.info['sfreq'] / 60
-    estimated_time_min = data_duration_min * 0.016
+    estimated_time_min = data_duration_min * 0.08
 
     print(f"Data duration: {data_duration_min:.1f} minutes")
     print(f"Estimated fitting time: {estimated_time_min:.0f}-{estimated_time_min*1.5:.0f} minutes")
