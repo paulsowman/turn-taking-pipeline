@@ -310,10 +310,13 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         h_list = [trf.h]
 
     for i, (pred_name, h) in enumerate(zip(predictor_names, h_list)):
-        # Find peak across all sensors
-        peak_idx = np.argmax(np.abs(h.x).max(axis=1))
+        # Find peak across all sensors and time points
+        # For each time point, find max absolute value across sensors
+        max_across_sensors = np.abs(h.x).max(axis=0)
+        # Find which time point has the highest value
+        peak_idx = np.argmax(max_across_sensors)
         peak_time = h.time.times[peak_idx] if hasattr(h.time, 'times') else h.time[peak_idx]
-        peak_val = np.abs(h.x).max()
+        peak_val = max_across_sensors[peak_idx]
         print(f"  {pred_name:25s}: {peak_time*1000:6.1f}ms (amplitude: {peak_val:.4f})")
 
     # Generate plots
