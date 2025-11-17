@@ -103,7 +103,7 @@ def compute_rms_across_sensors(kernel_data):
     return np.sqrt(np.mean(kernel_data**2, axis=0))
 
 
-def analyze_condition(subject, condition, speaker='participant', save_plots=True):
+def analyze_condition(subject, condition, speaker='participant', save_plots=True, predictors_to_use=None):
     """
     Analyze TRF for one condition.
 
@@ -117,6 +117,10 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         'participant', 'interviewer', or 'both'
     save_plots : bool
         Whether to save TRF plots
+    predictors_to_use : list of str, optional
+        Which predictors to include. Options: 'envelope', 'word_onsets', 'surprisal',
+        'f0_deviation', 'duration_deviation', 'pause'.
+        If None, uses all available predictors.
 
     Returns
     -------
@@ -181,14 +185,16 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     #   - Add as continuous predictor: MISC_closeness_to_turn
     #   - Consider interaction terms: surprisal × closeness, f0_deviation × closeness
 
-    # Define which predictors to use based on speaker
+    # Define all available predictors based on speaker
     if speaker == 'both':
-        predictor_channels = {
+        all_predictor_channels = {
+            'envelope_int': 'MISC_envelope_interviewer',
             'word_onsets_int': 'MISC_word_onsets_interviewer',
             'surprisal_int': 'MISC_surprisal_interviewer',
             'f0_deviation_int': 'MISC_f0_deviation_interviewer',
             'duration_deviation_int': 'MISC_duration_deviation_interviewer',
             'pause_int': 'MISC_pause_interviewer',
+            'envelope_part': 'MISC_envelope_participant',
             'word_onsets_part': 'MISC_word_onsets_participant',
             'surprisal_part': 'MISC_surprisal_participant',
             'f0_deviation_part': 'MISC_f0_deviation_participant',
@@ -196,7 +202,8 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
             'pause_part': 'MISC_pause_participant',
         }
     elif speaker == 'interviewer':
-        predictor_channels = {
+        all_predictor_channels = {
+            'envelope': 'MISC_envelope_interviewer',
             'word_onsets': 'MISC_word_onsets_interviewer',
             'surprisal': 'MISC_surprisal_interviewer',
             'f0_deviation': 'MISC_f0_deviation_interviewer',
@@ -204,13 +211,26 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
             'pause': 'MISC_pause_interviewer',
         }
     else:  # participant
-        predictor_channels = {
+        all_predictor_channels = {
+            'envelope': 'MISC_envelope_participant',
             'word_onsets': 'MISC_word_onsets_participant',
             'surprisal': 'MISC_surprisal_participant',
             'f0_deviation': 'MISC_f0_deviation_participant',
             'duration_deviation': 'MISC_duration_deviation_participant',
             'pause': 'MISC_pause_participant',
         }
+
+    # Filter predictors if specified
+    if predictors_to_use is not None:
+        print(f"Using subset of predictors: {', '.join(predictors_to_use)}")
+        predictor_channels = {}
+        for name, ch in all_predictor_channels.items():
+            # Extract base predictor name (strip _int/_part suffix for 'both' speaker)
+            base_name = name.replace('_int', '').replace('_part', '')
+            if base_name in predictors_to_use:
+                predictor_channels[name] = ch
+    else:
+        predictor_channels = all_predictor_channels
 
     # Get available channel names from raw file
     available_channels = raw.ch_names
@@ -342,19 +362,27 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
                 times = h.time.times if hasattr(h.time, 'times') else h.time
                 kernel_data = h.x  # Shape: (n_sensors, n_times)
 
-                # Top panel: Polarity-aligned mean
+                # Find best sensor (highest RMS across time)
+                sensor_rms = np.sqrt(np.mean(kernel_data**2, axis=1))
+                best_sensor_idx = np.argmax(sensor_rms)
+                best_sensor = kernel_data[best_sensor_idx, :]
+
+                # Top panel: Polarity-aligned mean + best sensor
                 ax = axes[0]
                 aligned_mean, n_flipped = align_sensor_polarities(kernel_data, times)
 
-                # Plot individual sensors (faint)
-                ax.plot(times, kernel_data.T, alpha=0.05, color='gray', linewidth=0.5)
-                # Plot polarity-aligned mean
-                ax.plot(times, aligned_mean, linewidth=2, color='red', label='Polarity-aligned mean')
+                # Plot polarity-aligned mean (thick)
+                ax.plot(times, aligned_mean, linewidth=2.5, color='red', label='Polarity-aligned mean', zorder=3)
+                # Plot best sensor (medium)
+                ax.plot(times, best_sensor, linewidth=1.5, color='blue', label=f'Best sensor (#{best_sensor_idx})', alpha=0.8, zorder=2)
+                # Plot all other sensors (very faint, for context)
+                ax.plot(times, kernel_data.T, alpha=0.02, color='gray', linewidth=0.3, zorder=1)
+
                 ax.axhline(0, color='k', linestyle='--', alpha=0.3)
                 ax.axvline(0, color='k', linestyle='--', alpha=0.3)
                 ax.set_xlabel('Time (s)')
                 ax.set_ylabel('TRF amplitude')
-                ax.set_title(f'{pred_name} - Polarity-Aligned Mean\n({n_flipped}/{kernel_data.shape[0]} sensors flipped based on M100 window)')
+                ax.set_title(f'{pred_name} - Polarity-Aligned Mean + Best Sensor\n({n_flipped}/{kernel_data.shape[0]} sensors flipped based on M100 window)')
                 ax.legend()
                 ax.grid(True, alpha=0.3)
 
@@ -385,7 +413,7 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     return trf
 
 
-def compare_conditions(subject, speaker='participant'):
+def compare_conditions(subject, speaker='participant', predictors_to_use=None):
     """
     Compare TRF between conversation and nursery rhyme.
 
@@ -395,6 +423,8 @@ def compare_conditions(subject, speaker='participant'):
         Subject ID
     speaker : str
         'participant', 'interviewer', or 'both'
+    predictors_to_use : list of str, optional
+        Subset of predictors to use
 
     Returns
     -------
@@ -407,8 +437,8 @@ def compare_conditions(subject, speaker='participant'):
     print(f"{'='*70}\n")
 
     # Analyze both conditions
-    trf_conv = analyze_condition(subject, 'conversation', speaker=speaker)
-    trf_nursery = analyze_condition(subject, 'nursery_rhyme', speaker=speaker)
+    trf_conv = analyze_condition(subject, 'conversation', speaker=speaker, predictors_to_use=predictors_to_use)
+    trf_nursery = analyze_condition(subject, 'nursery_rhyme', speaker=speaker, predictors_to_use=predictors_to_use)
 
     if trf_conv is None or trf_nursery is None:
         print("\n✗ ERROR: Failed to fit one or both conditions")
@@ -498,6 +528,12 @@ def main():
         action='store_true',
         help='Skip saving TRF plots'
     )
+    parser.add_argument(
+        '--predictors',
+        nargs='+',
+        choices=['envelope', 'word_onsets', 'surprisal', 'f0_deviation', 'duration_deviation', 'pause'],
+        help='Subset of predictors to use (default: all available)'
+    )
 
     args = parser.parse_args()
 
@@ -505,7 +541,11 @@ def main():
 
     if args.compare:
         # Compare both conditions
-        trf_conv, trf_nursery = compare_conditions(args.subject, speaker=args.speaker)
+        trf_conv, trf_nursery = compare_conditions(
+            args.subject,
+            speaker=args.speaker,
+            predictors_to_use=args.predictors
+        )
 
         if trf_conv is not None and trf_nursery is not None:
             print("\n" + "="*70)
@@ -519,7 +559,8 @@ def main():
             args.subject,
             args.condition,
             speaker=args.speaker,
-            save_plots=not args.no_plots
+            save_plots=not args.no_plots,
+            predictors_to_use=args.predictors
         )
 
         if trf is not None:
