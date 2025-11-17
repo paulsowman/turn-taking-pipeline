@@ -7,10 +7,15 @@ to relate linguistic/prosodic predictors to MEG responses.
 
 Features:
 - Automatic polarity alignment using M100 window (80-150ms)
-- Dual visualization: polarity-aligned mean + RMS magnitude + best sensor
+- 3-panel visualization with separate y-axes for clarity
 - Handles opposite sensor polarities that would otherwise average to near-zero
 - Edge artifact removal: fits -200 to +800ms, reports -100 to +600ms
 - Multi-predictor model: each kernel shows unique contribution
+
+Visualization Panels:
+  Panel 1: Polarity-aligned mean across sensors (red)
+  Panel 2: Top 5 sensors by RMS (individual sensor waveforms)
+  Panel 3: RMS magnitude across sensors (polarity-independent)
 
 Usage:
     # Analyze single condition with subset of predictors
@@ -24,7 +29,7 @@ Usage:
 
 Outputs:
     trf_{predictor}.png        - Eelbrain TopoButterfly plot (if wxPython available)
-    trf_{predictor}_dual.png   - Dual plot: polarity-aligned + RMS + best sensor
+    trf_{predictor}_dual.png   - 3-panel plot with separate y-axes
     trf_model.pickle           - Fitted TRF model (edges already cropped)
 """
 import eelbrain
@@ -374,41 +379,54 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
             except Exception as e:
                 print(f"  ✗ Error plotting {pred_name}: {e}")
 
-            # Always create dual plot (polarity-aligned + RMS)
+            # Always create 3-panel plot (polarity-aligned + best sensor + RMS)
             try:
-                fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+                fig, axes = plt.subplots(3, 1, figsize=(12, 14))
                 times = h.time.times if hasattr(h.time, 'times') else h.time
                 kernel_data = h.x  # Shape: (n_sensors, n_times)
 
-                # Find best sensor (highest RMS across time)
+                # Find best sensors (top 5 by RMS)
                 sensor_rms = np.sqrt(np.mean(kernel_data**2, axis=1))
-                best_sensor_idx = np.argmax(sensor_rms)
-                best_sensor = kernel_data[best_sensor_idx, :]
+                best_sensor_indices = np.argsort(sensor_rms)[-5:][::-1]  # Top 5 in descending order
+                best_sensor_idx = best_sensor_indices[0]  # Best sensor
 
-                # Top panel: Polarity-aligned mean + best sensor
+                # Panel 1: Polarity-aligned mean
                 ax = axes[0]
                 aligned_mean, n_flipped = align_sensor_polarities(kernel_data, times)
 
+                # Plot all sensors (very faint, for context)
+                ax.plot(times, kernel_data.T, alpha=0.02, color='gray', linewidth=0.3, zorder=1)
                 # Plot polarity-aligned mean (thick)
                 ax.plot(times, aligned_mean, linewidth=2.5, color='red', label='Polarity-aligned mean', zorder=3)
-                # Plot best sensor (medium)
-                ax.plot(times, best_sensor, linewidth=1.5, color='blue', label=f'Best sensor (#{best_sensor_idx})', alpha=0.8, zorder=2)
-                # Plot all other sensors (very faint, for context)
-                ax.plot(times, kernel_data.T, alpha=0.02, color='gray', linewidth=0.3, zorder=1)
 
                 ax.axhline(0, color='k', linestyle='--', alpha=0.3)
                 ax.axvline(0, color='k', linestyle='--', alpha=0.3)
-                ax.set_xlabel('Time (s)')
                 ax.set_ylabel('TRF amplitude')
-                ax.set_title(f'{pred_name} - Polarity-Aligned Mean + Best Sensor\n({n_flipped}/{kernel_data.shape[0]} sensors flipped based on M100 window)')
+                ax.set_title(f'{pred_name} - Polarity-Aligned Mean\n({n_flipped}/{kernel_data.shape[0]} sensors flipped based on M100 window)')
                 ax.legend()
                 ax.grid(True, alpha=0.3)
 
-                # Bottom panel: RMS magnitude (polarity-independent)
+                # Panel 2: Best sensors
                 ax = axes[1]
+                colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']  # Distinct colors
+                for i, sensor_idx in enumerate(best_sensor_indices):
+                    ax.plot(times, kernel_data[sensor_idx, :],
+                           linewidth=2, color=colors[i],
+                           label=f'Sensor #{sensor_idx} (rank {i+1})',
+                           alpha=0.8, zorder=5-i)
+
+                ax.axhline(0, color='k', linestyle='--', alpha=0.3)
+                ax.axvline(0, color='k', linestyle='--', alpha=0.3)
+                ax.set_ylabel('TRF amplitude')
+                ax.set_title(f'{pred_name} - Top 5 Sensors by RMS')
+                ax.legend(loc='best', fontsize=9)
+                ax.grid(True, alpha=0.3)
+
+                # Panel 3: RMS magnitude (polarity-independent)
+                ax = axes[2]
                 rms = compute_rms_across_sensors(kernel_data)
 
-                ax.plot(times, rms, linewidth=2, color='blue', label='RMS across sensors')
+                ax.plot(times, rms, linewidth=2, color='purple', label='RMS across sensors')
                 ax.axvline(0, color='k', linestyle='--', alpha=0.3)
                 ax.set_xlabel('Time (s)')
                 ax.set_ylabel('RMS amplitude')
@@ -420,9 +438,9 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
                 plt.tight_layout()
                 fig.savefig(output_dir / f'trf_{pred_name}_dual.png', dpi=300, bbox_inches='tight')
                 plt.close(fig)
-                print(f"  ✓ Saved dual plot: trf_{pred_name}_dual.png ({n_flipped}/{kernel_data.shape[0]} sensors flipped)")
+                print(f"  ✓ Saved 3-panel plot: trf_{pred_name}_dual.png ({n_flipped}/{kernel_data.shape[0]} sensors flipped)")
             except Exception as e2:
-                print(f"  ✗ Dual plot failed: {e2}")
+                print(f"  ✗ 3-panel plot failed: {e2}")
 
     # Report timing
     elapsed_time = time.time() - start_time
