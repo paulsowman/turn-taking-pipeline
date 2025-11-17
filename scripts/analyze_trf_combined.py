@@ -309,24 +309,40 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         return None
 
     print("\n✓ TRF model fitted!")
-    print("  Cropping edge artifacts...")
-    print("  Fit window: -200 to +800ms")
-    print("  Saved window: -100 to +600ms (remove outer 100ms)")
-    print("  Visualization window: -50 to +550ms (remove additional edge buffer)")
+
+    # Diagnostic: Check time range BEFORE cropping
+    h_before = trf.h[0] if isinstance(trf.h, tuple) else trf.h
+    times_before = h_before.time.times if hasattr(h_before.time, 'times') else h_before.time
+    print(f"\n  BEFORE cropping:")
+    print(f"    Time range: {times_before[0]*1000:.1f} to {times_before[-1]*1000:.1f} ms")
+    print(f"    N time points: {len(times_before)}")
 
     # Crop TRF kernels to remove edge artifacts
+    print("\n  Cropping edge artifacts...")
+    print("    Fit window: -200 to +800ms")
+    print("    Target saved window: -100 to +600ms (remove outer 100ms)")
+    print("    Target visualization window: -50 to +550ms (remove additional edge buffer)")
+
     # Keep -100ms to +600ms for saving (discard outer 100ms padding)
     if isinstance(trf.h, tuple):
         h_list_cropped = []
-        for h in trf.h:
+        for i, h in enumerate(trf.h):
+            print(f"    Cropping predictor {i}...")
             h_cropped = h.sub(time=(-0.100, 0.600))
             h_list_cropped.append(h_cropped)
         # Replace with cropped versions
         trf.h = tuple(h_list_cropped)
     else:
-        trf.h = trf.h.sub(time=(-0.100, 0.600))
+        h_cropped = trf.h.sub(time=(-0.100, 0.600))
+        trf.h = h_cropped
 
-    print("  ✓ Edge artifacts removed")
+    # Diagnostic: Check time range AFTER cropping
+    h_after = trf.h[0] if isinstance(trf.h, tuple) else trf.h
+    times_after = h_after.time.times if hasattr(h_after.time, 'times') else h_after.time
+    print(f"\n  AFTER cropping:")
+    print(f"    Time range: {times_after[0]*1000:.1f} to {times_after[-1]*1000:.1f} ms")
+    print(f"    N time points: {len(times_after)}")
+    print(f"  ✓ Edge artifacts removed")
 
     # Get mean correlation across sensors
     r_mean = trf.r.mean() if hasattr(trf.r, 'mean') else float(trf.r)
@@ -356,14 +372,27 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         h_list = [trf.h]
 
     for i, (pred_name, h) in enumerate(zip(predictor_names, h_list)):
+        # Diagnostic: show time range of this kernel
+        h_times = h.time.times if hasattr(h.time, 'times') else h.time
+        print(f"\n  {pred_name}:")
+        print(f"    Kernel time range: {h_times[0]*1000:.1f} to {h_times[-1]*1000:.1f} ms")
+
         # Find peak across all sensors and time points
         # For each time point, find max absolute value across sensors
         max_across_sensors = np.abs(h.x).max(axis=0)
         # Find which time point has the highest value
         peak_idx = np.argmax(max_across_sensors)
-        peak_time = h.time.times[peak_idx] if hasattr(h.time, 'times') else h.time[peak_idx]
+        peak_time = h_times[peak_idx]
         peak_val = max_across_sensors[peak_idx]
-        print(f"  {pred_name:25s}: {peak_time*1000:6.1f}ms (amplitude: {peak_val:.4f})")
+        print(f"    Global peak: {peak_time*1000:6.1f}ms (amplitude: {peak_val:.4f})")
+
+        # Also check M100 window (80-150ms) if it exists
+        m100_mask = (h_times >= 0.08) & (h_times <= 0.15)
+        if np.any(m100_mask):
+            m100_max = max_across_sensors[m100_mask].max()
+            m100_idx = np.where(m100_mask)[0][np.argmax(max_across_sensors[m100_mask])]
+            m100_time = h_times[m100_idx]
+            print(f"    M100 window peak: {m100_time*1000:.1f}ms (amplitude: {m100_max:.4f})")
 
     # Generate plots
     if save_plots:
