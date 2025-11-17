@@ -110,6 +110,7 @@ def process_subject_run(
     config: dict,
     compute_surprisal_flag: bool = True,
     overwrite: bool = False,
+    target_sfreq: int = 100,
 ) -> bool:
     """
     Create TRF predictors and add to MEG .fif file.
@@ -128,6 +129,8 @@ def process_subject_run(
         Whether to compute GPT-2 surprisal (slow)
     overwrite : bool
         Whether to overwrite existing TRF .fif file
+    target_sfreq : int
+        Target sampling rate in Hz (default: 100). Use 1000 to skip downsampling.
 
     Returns
     -------
@@ -154,13 +157,15 @@ def process_subject_run(
     print("Loading MEG data...")
     meg_raw = mne.io.read_raw_fif(paths['meg_raw'], preload=True, verbose=False)
 
-    # Downsample to 100 Hz for computational efficiency (TODO implementation from docstring)
-    target_sfreq = 100.0
+    # Downsample if target sampling rate is lower than native
     if meg_raw.info['sfreq'] > target_sfreq:
         original_sfreq = meg_raw.info['sfreq']
-        print(f"  Downsampling from {original_sfreq:.0f} Hz to {target_sfreq:.0f} Hz...")
-        meg_raw.resample(target_sfreq, npad='auto', verbose=False)
-        print(f"  ✓ Downsampled (10x speedup for TRF fitting)")
+        speedup = original_sfreq / target_sfreq
+        print(f"  Downsampling from {original_sfreq:.0f} Hz to {target_sfreq:.0f} Hz ({speedup:.0f}x speedup for TRF fitting)...")
+        meg_raw.resample(float(target_sfreq), npad='auto', verbose=False)
+        print(f"  ✓ Downsampled")
+    elif target_sfreq >= 1000:
+        print(f"  No downsampling (target={target_sfreq} Hz >= native {meg_raw.info['sfreq']:.0f} Hz)")
 
     meg_times = meg_raw.times
     meg_sfreq = meg_raw.info['sfreq']
@@ -725,6 +730,13 @@ def main():
         action='store_true',
         help='Overwrite existing TRF FIF files'
     )
+    parser.add_argument(
+        '--downsample',
+        type=int,
+        choices=[100, 200, 500, 1000],
+        default=100,
+        help='Target sampling rate in Hz (default: 100). Use 1000 to skip downsampling.'
+    )
 
     args = parser.parse_args()
 
@@ -769,6 +781,7 @@ def main():
                     config=config,
                     compute_surprisal_flag=not args.no_surprisal,
                     overwrite=args.overwrite,
+                    target_sfreq=args.downsample,
                 )
                 results.append({
                     'subject': subject,
