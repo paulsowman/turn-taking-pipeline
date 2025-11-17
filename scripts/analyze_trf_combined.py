@@ -330,7 +330,11 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     print("\n  Cropping edge artifacts...")
     print(f"    Fit window: {tstart*1000:.0f} to {tstop*1000:.0f}ms")
     print(f"    Target saved window: {crop_start*1000:.0f} to {crop_stop*1000:.0f}ms")
-    print("    Visualization window: -50 to +550ms (additional edge buffer for plotting)")
+
+    # Calculate visualization window (50ms buffer from saved edges, or full window if too small)
+    viz_start = max(crop_start, crop_start + 0.05) if (crop_stop - crop_start) > 0.15 else crop_start
+    viz_stop = min(crop_stop, crop_stop - 0.05) if (crop_stop - crop_start) > 0.15 else crop_stop
+    print(f"    Visualization window: {viz_start*1000:.0f} to {viz_stop*1000:.0f}ms (additional edge buffer for plotting)")
 
     # Crop to user-specified window
     if isinstance(trf.h, tuple):
@@ -427,8 +431,8 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
                 kernel_data = h.x  # Shape: (n_sensors, n_times)
 
                 # Crop visualization window to avoid edge artifacts
-                # Keep only -50ms to +550ms for plotting (removes edges at -100 and +600)
-                viz_mask = (times >= -0.050) & (times <= 0.550)
+                # Use calculated viz window (removes edges from saved window)
+                viz_mask = (times >= viz_start) & (times <= viz_stop)
                 times_viz = times[viz_mask]
                 kernel_data_viz = kernel_data[:, viz_mask]
 
@@ -486,7 +490,7 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
                 plt.tight_layout()
                 fig.savefig(output_dir / f'trf_{pred_name}_dual.png', dpi=300, bbox_inches='tight')
                 plt.close(fig)
-                print(f"  ✓ Saved 3-panel plot: trf_{pred_name}_dual.png (viz: -50 to +550ms, {n_flipped}/{kernel_data_viz.shape[0]} sensors flipped)")
+                print(f"  ✓ Saved 3-panel plot: trf_{pred_name}_dual.png (viz: {viz_start*1000:.0f} to {viz_stop*1000:.0f}ms, {n_flipped}/{kernel_data_viz.shape[0]} sensors flipped)")
             except Exception as e2:
                 print(f"  ✗ 3-panel plot failed: {e2}")
 
