@@ -110,7 +110,8 @@ def compute_rms_across_sensors(kernel_data):
     return np.sqrt(np.mean(kernel_data**2, axis=0))
 
 
-def analyze_condition(subject, condition, speaker='participant', save_plots=True, predictors_to_use=None):
+def analyze_condition(subject, condition, speaker='participant', save_plots=True, predictors_to_use=None,
+                     tstart=-0.2, tstop=0.8, crop_start=-0.1, crop_stop=0.6):
     """
     Analyze TRF for one condition.
 
@@ -122,6 +123,14 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         'conversation' or 'nursery_rhyme'
     speaker : str
         'participant', 'interviewer', or 'both'
+    tstart : float
+        TRF fitting window start in seconds (default: -0.2)
+    tstop : float
+        TRF fitting window end in seconds (default: 0.8)
+    crop_start : float
+        Cropped/saved window start in seconds (default: -0.1)
+    crop_stop : float
+        Cropped/saved window end in seconds (default: 0.6)
     save_plots : bool
         Whether to save TRF plots
     predictors_to_use : list of str, optional
@@ -284,8 +293,8 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         print(f"Estimated fitting time: ~{estimated_time_min:.1f} minutes")
     print("(Progress updates will appear below)")
     print("\nParameters:")
-    print("  - Fitting window: -200ms to +800ms (with 100ms edge padding)")
-    print("  - Analysis window: -100ms to +600ms (edges cropped)")
+    print(f"  - Fitting window: {tstart*1000:.0f}ms to {tstop*1000:.0f}ms")
+    print(f"  - Saved window: {crop_start*1000:.0f}ms to {crop_stop*1000:.0f}ms (edges cropped)")
     print("  - Basis function width: 50ms")
     print("  - Cross-validation: 5-fold")
     print("  - Error metric: L1 (robust to outliers)")
@@ -295,8 +304,8 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         trf = eelbrain.boosting(
             meg,
             predictor_ndvars,  # Pass as tuple, not dict
-            tstart=-0.200,  # Start 200ms before predictor (extra padding for edges)
-            tstop=0.800,    # End 800ms after predictor (extra padding for edges)
+            tstart=tstart,  # User-configurable fitting window start
+            tstop=tstop,    # User-configurable fitting window end
             basis=0.050,    # 50ms basis function
             error='l1',     # L1 error (robust)
             partitions=5,   # 5-fold cross-validation
@@ -319,21 +328,21 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
 
     # Crop TRF kernels to remove edge artifacts
     print("\n  Cropping edge artifacts...")
-    print("    Fit window: -200 to +800ms")
-    print("    Target saved window: -100 to +600ms (remove outer 100ms)")
-    print("    Target visualization window: -50 to +550ms (remove additional edge buffer)")
+    print(f"    Fit window: {tstart*1000:.0f} to {tstop*1000:.0f}ms")
+    print(f"    Target saved window: {crop_start*1000:.0f} to {crop_stop*1000:.0f}ms")
+    print("    Visualization window: -50 to +550ms (additional edge buffer for plotting)")
 
-    # Keep -100ms to +600ms for saving (discard outer 100ms padding)
+    # Crop to user-specified window
     if isinstance(trf.h, tuple):
         h_list_cropped = []
         for i, h in enumerate(trf.h):
             print(f"    Cropping predictor {i}...")
-            h_cropped = h.sub(time=(-0.100, 0.600))
+            h_cropped = h.sub(time=(crop_start, crop_stop))
             h_list_cropped.append(h_cropped)
         # Replace with cropped versions
         trf.h = tuple(h_list_cropped)
     else:
-        h_cropped = trf.h.sub(time=(-0.100, 0.600))
+        h_cropped = trf.h.sub(time=(crop_start, crop_stop))
         trf.h = h_cropped
 
     # Diagnostic: Check time range AFTER cropping
@@ -488,7 +497,8 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     return trf
 
 
-def compare_conditions(subject, speaker='participant', predictors_to_use=None):
+def compare_conditions(subject, speaker='participant', predictors_to_use=None,
+                      tstart=-0.2, tstop=0.8, crop_start=-0.1, crop_stop=0.6):
     """
     Compare TRF between conversation and nursery rhyme.
 
@@ -500,6 +510,14 @@ def compare_conditions(subject, speaker='participant', predictors_to_use=None):
         'participant', 'interviewer', or 'both'
     predictors_to_use : list of str, optional
         Subset of predictors to use
+    tstart : float
+        TRF fitting window start in seconds (default: -0.2)
+    tstop : float
+        TRF fitting window end in seconds (default: 0.8)
+    crop_start : float
+        Cropped/saved window start in seconds (default: -0.1)
+    crop_stop : float
+        Cropped/saved window end in seconds (default: 0.6)
 
     Returns
     -------
@@ -512,8 +530,10 @@ def compare_conditions(subject, speaker='participant', predictors_to_use=None):
     print(f"{'='*70}\n")
 
     # Analyze both conditions
-    trf_conv = analyze_condition(subject, 'conversation', speaker=speaker, predictors_to_use=predictors_to_use)
-    trf_nursery = analyze_condition(subject, 'nursery_rhyme', speaker=speaker, predictors_to_use=predictors_to_use)
+    trf_conv = analyze_condition(subject, 'conversation', speaker=speaker, predictors_to_use=predictors_to_use,
+                                tstart=tstart, tstop=tstop, crop_start=crop_start, crop_stop=crop_stop)
+    trf_nursery = analyze_condition(subject, 'nursery_rhyme', speaker=speaker, predictors_to_use=predictors_to_use,
+                                   tstart=tstart, tstop=tstop, crop_start=crop_start, crop_stop=crop_stop)
 
     if trf_conv is None or trf_nursery is None:
         print("\n✗ ERROR: Failed to fit one or both conditions")
@@ -609,6 +629,30 @@ def main():
         choices=['envelope', 'word_onsets', 'surprisal', 'f0_deviation', 'duration_deviation', 'pause'],
         help='Subset of predictors to use (default: all available)'
     )
+    parser.add_argument(
+        '--tstart',
+        type=float,
+        default=-0.2,
+        help='TRF fitting window start in seconds (default: -0.2 = -200ms)'
+    )
+    parser.add_argument(
+        '--tstop',
+        type=float,
+        default=0.8,
+        help='TRF fitting window end in seconds (default: 0.8 = +800ms)'
+    )
+    parser.add_argument(
+        '--crop-start',
+        type=float,
+        default=-0.1,
+        help='Cropped/saved window start in seconds (default: -0.1 = -100ms)'
+    )
+    parser.add_argument(
+        '--crop-stop',
+        type=float,
+        default=0.6,
+        help='Cropped/saved window end in seconds (default: 0.6 = +600ms)'
+    )
 
     args = parser.parse_args()
 
@@ -619,7 +663,11 @@ def main():
         trf_conv, trf_nursery = compare_conditions(
             args.subject,
             speaker=args.speaker,
-            predictors_to_use=args.predictors
+            predictors_to_use=args.predictors,
+            tstart=args.tstart,
+            tstop=args.tstop,
+            crop_start=args.crop_start,
+            crop_stop=args.crop_stop
         )
 
         if trf_conv is not None and trf_nursery is not None:
@@ -635,7 +683,11 @@ def main():
             args.condition,
             speaker=args.speaker,
             save_plots=not args.no_plots,
-            predictors_to_use=args.predictors
+            predictors_to_use=args.predictors,
+            tstart=args.tstart,
+            tstop=args.tstop,
+            crop_start=args.crop_start,
+            crop_stop=args.crop_stop
         )
 
         if trf is not None:
