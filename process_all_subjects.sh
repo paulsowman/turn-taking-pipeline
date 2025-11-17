@@ -64,7 +64,7 @@ for SUBJECT in "${SUBJECTS[@]}"; do
 
     for RUN in "${RUNS[@]}"; do
         echo "  Processing $SUBJECT run $RUN..."
-        python scripts/sync_audio_meg.py --subject "$SUBJECT" --run "$RUN"
+        python scripts/run_audio_meg_sync.py --subject "$SUBJECT" --run "$RUN"
     done
 
     # Step 5: Create TRF predictors (with 100Hz downsampling)
