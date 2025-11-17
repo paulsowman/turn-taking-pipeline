@@ -7,23 +7,25 @@ to relate linguistic/prosodic predictors to MEG responses.
 
 Features:
 - Automatic polarity alignment using M100 window (80-150ms)
-- Dual visualization: polarity-aligned mean + RMS magnitude
+- Dual visualization: polarity-aligned mean + RMS magnitude + best sensor
 - Handles opposite sensor polarities that would otherwise average to near-zero
+- Edge artifact removal: fits -200 to +800ms, reports -100 to +600ms
+- Multi-predictor model: each kernel shows unique contribution
 
 Usage:
-    # Analyze single condition
-    python scripts/analyze_trf_combined.py sub-01 --condition conversation
+    # Analyze single condition with subset of predictors
+    python scripts/analyze_trf_combined.py sub-01 --condition conversation --predictors envelope word_onsets surprisal
 
-    # Analyze both conditions and compare
+    # Compare both conditions
     python scripts/analyze_trf_combined.py sub-01 --compare
 
     # Analyze both speakers
     python scripts/analyze_trf_combined.py sub-01 --compare --speaker both
 
 Outputs:
-    trf_{predictor}.png        - Eelbrain TopoButterfly plot
-    trf_{predictor}_dual.png   - Dual plot: polarity-aligned + RMS
-    trf_model.pickle           - Fitted TRF model
+    trf_{predictor}.png        - Eelbrain TopoButterfly plot (if wxPython available)
+    trf_{predictor}_dual.png   - Dual plot: polarity-aligned + RMS + best sensor
+    trf_model.pickle           - Fitted TRF model (edges already cropped)
 """
 import eelbrain
 import mne
@@ -277,7 +279,8 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         print(f"Estimated fitting time: ~{estimated_time_min:.1f} minutes")
     print("(Progress updates will appear below)")
     print("\nParameters:")
-    print("  - Time window: -100ms to +600ms")
+    print("  - Fitting window: -200ms to +800ms (with 100ms edge padding)")
+    print("  - Analysis window: -100ms to +600ms (edges cropped)")
     print("  - Basis function width: 50ms")
     print("  - Cross-validation: 5-fold")
     print("  - Error metric: L1 (robust to outliers)")
@@ -287,8 +290,8 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         trf = eelbrain.boosting(
             meg,
             predictor_ndvars,  # Pass as tuple, not dict
-            tstart=-0.100,  # Start 100ms before predictor
-            tstop=0.600,    # End 600ms after predictor
+            tstart=-0.200,  # Start 200ms before predictor (extra padding for edges)
+            tstop=0.800,    # End 800ms after predictor (extra padding for edges)
             basis=0.050,    # 50ms basis function
             error='l1',     # L1 error (robust)
             partitions=5,   # 5-fold cross-validation
@@ -301,6 +304,21 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         return None
 
     print("\n✓ TRF model fitted!")
+    print("  Cropping edge artifacts (-200 to -100ms and +600 to +800ms)...")
+
+    # Crop TRF kernels to remove edge artifacts
+    # Keep only -100ms to +600ms (discard 100ms padding on each side)
+    if isinstance(trf.h, tuple):
+        h_list_cropped = []
+        for h in trf.h:
+            h_cropped = h.sub(time=(-0.100, 0.600))
+            h_list_cropped.append(h_cropped)
+        # Replace with cropped versions
+        trf.h = tuple(h_list_cropped)
+    else:
+        trf.h = trf.h.sub(time=(-0.100, 0.600))
+
+    print("  ✓ Edge artifacts removed")
 
     # Get mean correlation across sensors
     r_mean = trf.r.mean() if hasattr(trf.r, 'mean') else float(trf.r)
