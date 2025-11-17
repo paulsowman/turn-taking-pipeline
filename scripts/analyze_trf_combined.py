@@ -309,10 +309,13 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
         return None
 
     print("\n✓ TRF model fitted!")
-    print("  Cropping edge artifacts (-200 to -100ms and +600 to +800ms)...")
+    print("  Cropping edge artifacts...")
+    print("  Fit window: -200 to +800ms")
+    print("  Saved window: -100 to +600ms (remove outer 100ms)")
+    print("  Visualization window: -50 to +550ms (remove additional edge buffer)")
 
     # Crop TRF kernels to remove edge artifacts
-    # Keep only -100ms to +600ms (discard 100ms padding on each side)
+    # Keep -100ms to +600ms for saving (discard outer 100ms padding)
     if isinstance(trf.h, tuple):
         h_list_cropped = []
         for h in trf.h:
@@ -385,32 +388,39 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
                 times = h.time.times if hasattr(h.time, 'times') else h.time
                 kernel_data = h.x  # Shape: (n_sensors, n_times)
 
-                # Find best sensors (top 5 by RMS)
-                sensor_rms = np.sqrt(np.mean(kernel_data**2, axis=1))
+                # Crop visualization window to avoid edge artifacts
+                # Keep only -50ms to +550ms for plotting (removes edges at -100 and +600)
+                viz_mask = (times >= -0.050) & (times <= 0.550)
+                times_viz = times[viz_mask]
+                kernel_data_viz = kernel_data[:, viz_mask]
+
+                # Find best sensors (top 5 by RMS across visualization window)
+                sensor_rms = np.sqrt(np.mean(kernel_data_viz**2, axis=1))
                 best_sensor_indices = np.argsort(sensor_rms)[-5:][::-1]  # Top 5 in descending order
                 best_sensor_idx = best_sensor_indices[0]  # Best sensor
 
                 # Panel 1: Polarity-aligned mean
                 ax = axes[0]
-                aligned_mean, n_flipped = align_sensor_polarities(kernel_data, times)
+                aligned_mean, n_flipped = align_sensor_polarities(kernel_data_viz, times_viz)
 
-                # Plot all sensors (very faint, for context)
-                ax.plot(times, kernel_data.T, alpha=0.02, color='gray', linewidth=0.3, zorder=1)
-                # Plot polarity-aligned mean (thick)
-                ax.plot(times, aligned_mean, linewidth=2.5, color='red', label='Polarity-aligned mean', zorder=3)
+                # Plot ONLY polarity-aligned mean (no individual sensors to avoid y-axis scaling issues)
+                ax.plot(times_viz, aligned_mean, linewidth=2.5, color='red', label='Polarity-aligned mean', zorder=3)
 
                 ax.axhline(0, color='k', linestyle='--', alpha=0.3)
                 ax.axvline(0, color='k', linestyle='--', alpha=0.3)
                 ax.set_ylabel('TRF amplitude')
-                ax.set_title(f'{pred_name} - Polarity-Aligned Mean\n({n_flipped}/{kernel_data.shape[0]} sensors flipped based on M100 window)')
+                ax.set_title(f'{pred_name} - Polarity-Aligned Mean\n({n_flipped}/{kernel_data_viz.shape[0]} sensors flipped based on M100 window)')
                 ax.legend()
                 ax.grid(True, alpha=0.3)
+                # Set y-axis limits based on aligned mean (with 20% padding)
+                mean_range = np.max(np.abs(aligned_mean))
+                ax.set_ylim(-mean_range * 1.2, mean_range * 1.2)
 
                 # Panel 2: Best sensors
                 ax = axes[1]
                 colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']  # Distinct colors
                 for i, sensor_idx in enumerate(best_sensor_indices):
-                    ax.plot(times, kernel_data[sensor_idx, :],
+                    ax.plot(times_viz, kernel_data_viz[sensor_idx, :],
                            linewidth=2, color=colors[i],
                            label=f'Sensor #{sensor_idx} (rank {i+1})',
                            alpha=0.8, zorder=5-i)
@@ -424,9 +434,9 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
 
                 # Panel 3: RMS magnitude (polarity-independent)
                 ax = axes[2]
-                rms = compute_rms_across_sensors(kernel_data)
+                rms = compute_rms_across_sensors(kernel_data_viz)
 
-                ax.plot(times, rms, linewidth=2, color='purple', label='RMS across sensors')
+                ax.plot(times_viz, rms, linewidth=2, color='purple', label='RMS across sensors')
                 ax.axvline(0, color='k', linestyle='--', alpha=0.3)
                 ax.set_xlabel('Time (s)')
                 ax.set_ylabel('RMS amplitude')
@@ -438,7 +448,7 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
                 plt.tight_layout()
                 fig.savefig(output_dir / f'trf_{pred_name}_dual.png', dpi=300, bbox_inches='tight')
                 plt.close(fig)
-                print(f"  ✓ Saved 3-panel plot: trf_{pred_name}_dual.png ({n_flipped}/{kernel_data.shape[0]} sensors flipped)")
+                print(f"  ✓ Saved 3-panel plot: trf_{pred_name}_dual.png (viz: -50 to +550ms, {n_flipped}/{kernel_data_viz.shape[0]} sensors flipped)")
             except Exception as e2:
                 print(f"  ✗ 3-panel plot failed: {e2}")
 
