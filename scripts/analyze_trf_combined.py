@@ -323,8 +323,13 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     h_before = trf.h[0] if isinstance(trf.h, tuple) else trf.h
     times_before = h_before.time.times if hasattr(h_before.time, 'times') else h_before.time
     print(f"\n  BEFORE cropping:")
-    print(f"    Time range: {times_before[0]*1000:.1f} to {times_before[-1]*1000:.1f} ms")
+    print(f"    Requested fit window: {tstart*1000:.1f} to {tstop*1000:.1f} ms")
+    print(f"    Actual time range: {times_before[0]*1000:.1f} to {times_before[-1]*1000:.1f} ms")
     print(f"    N time points: {len(times_before)}")
+    if len(times_before) > 1:
+        basis_spacing = times_before[1] - times_before[0]
+        print(f"    Basis spacing: {basis_spacing*1000:.1f} ms (basis width: 50ms)")
+    print(f"    Note: Basis functions are centered at discrete intervals (50ms)")
 
     # Crop TRF kernels to remove edge artifacts
     print("\n  Cropping edge artifacts...")
