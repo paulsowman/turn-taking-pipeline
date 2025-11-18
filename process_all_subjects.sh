@@ -80,12 +80,17 @@ for i in {1..32}; do
 
     # Step 3: Forced alignment (needs conda env with MFA)
     echo ""
-    echo "Step 3: Forced alignment (using conda env: $CONDA_ENV)"
+    echo "Step 3: Forced alignment (switching to conda)"
+    echo "Activating conda env: $CONDA_ENV"
+    eval "$(conda shell.bash hook)"
+    conda activate "$CONDA_ENV"
 
     for RUN in "${RUNS[@]}"; do
         echo "  Processing $SUBJECT run $RUN..."
-        conda run -n "$CONDA_ENV" python scripts/run_mfa_alignment.py --subject "$SUBJECT" --run "$RUN"
+        python scripts/run_mfa_alignment.py --subject "$SUBJECT" --run "$RUN"
     done
+
+    conda deactivate
 
     # Step 4: Audio-MEG synchronization
     echo ""
