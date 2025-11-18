@@ -334,12 +334,11 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
     # Crop TRF kernels to remove edge artifacts
     print("\n  Cropping edge artifacts...")
     print(f"    Fit window: {tstart*1000:.0f} to {tstop*1000:.0f}ms")
-    print(f"    Target saved window: {crop_start*1000:.0f} to {crop_stop*1000:.0f}ms")
+    print(f"    Saved/visualization window: {crop_start*1000:.0f} to {crop_stop*1000:.0f}ms")
 
-    # Calculate visualization window (50ms buffer from saved edges, or full window if too small)
-    viz_start = max(crop_start, crop_start + 0.05) if (crop_stop - crop_start) > 0.15 else crop_start
-    viz_stop = min(crop_stop, crop_stop - 0.05) if (crop_stop - crop_start) > 0.15 else crop_stop
-    print(f"    Visualization window: {viz_start*1000:.0f} to {viz_stop*1000:.0f}ms (additional edge buffer for plotting)")
+    # Use saved window for visualization (no additional buffering)
+    viz_start = crop_start
+    viz_stop = crop_stop
 
     # Crop to user-specified window
     if isinstance(trf.h, tuple):
