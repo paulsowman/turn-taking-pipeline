@@ -862,3 +862,138 @@ def create_distance_to_turn_predictor(
                 f"{n_capped}/{len(meg_times)} time points capped at {max_distance}s")
 
     return distance_to_turn
+
+
+def create_proportion_through_turn_predictor(
+    own_word_times_meg: np.ndarray,
+    other_word_times_meg: np.ndarray,
+    meg_times: np.ndarray,
+    min_turn_length: float = 0.5,
+) -> np.ndarray:
+    """
+    Create proportion-through-turn predictor.
+
+    For each time point during the OTHER speaker's turns, compute how far
+    through that turn we are (0.0 = start, 1.0 = end). This captures turn
+    progression from the listener's perspective.
+
+    This is cleaner than distance-to-turn for stratification:
+    - proportion < 0.5 = first half of turn (FAR from boundary)
+    - proportion >= 0.5 = second half of turn (CLOSE to boundary)
+
+    Parameters
+    ----------
+    own_word_times_meg : np.ndarray
+        Word onset times for the speaker being analyzed (MEG timebase, seconds)
+    other_word_times_meg : np.ndarray
+        Word onset times for the other speaker (MEG timebase, seconds)
+    meg_times : np.ndarray
+        MEG time points (seconds)
+    min_turn_length : float
+        Minimum turn length to include (seconds). Very short turns excluded.
+
+    Returns
+    -------
+    proportion : np.ndarray
+        Proportion through OTHER speaker's turn (0-1) during their speech,
+        NaN during own speaker's turns and silence.
+
+    Notes
+    -----
+    When analyzing interviewer speech (participant listening):
+    - Tracks progression through interviewer's turns
+    - proportion = 0.0 at start of interviewer turn
+    - proportion = 1.0 at end of interviewer turn (participant about to speak)
+    - Hypothesis: Surprisal matters less in second half (proportion >= 0.5)
+
+    Example stratification:
+        far_mask = (proportion < 0.5) & ~np.isnan(proportion)
+        close_mask = (proportion >= 0.5) & ~np.isnan(proportion)
+    """
+    # Identify all words chronologically from both speakers
+    all_words = []
+    for t in own_word_times_meg:
+        all_words.append((t, 'own'))
+    for t in other_word_times_meg:
+        all_words.append((t, 'other'))
+
+    # Sort by time
+    all_words = sorted(all_words, key=lambda x: x[0])
+
+    if len(all_words) < 2:
+        logger.warning("Not enough words to identify turns")
+        return np.full(len(meg_times), np.nan)
+
+    # Identify continuous turns by the OTHER speaker
+    # A turn = sequence of words by same speaker, bounded by speaker switches
+    turns = []  # List of (start_time, end_time) for other speaker's turns
+
+    current_speaker = None
+    turn_start = None
+
+    for i, (word_time, speaker) in enumerate(all_words):
+        if speaker != current_speaker:
+            # Speaker switch
+            if current_speaker == 'other' and turn_start is not None:
+                # End of other speaker's turn
+                turn_end = word_time  # Approximation: switch happens at next word
+                if turn_end - turn_start >= min_turn_length:
+                    turns.append((turn_start, turn_end))
+
+            # Start new turn
+            current_speaker = speaker
+            if speaker == 'other':
+                turn_start = word_time
+            else:
+                turn_start = None
+
+    # Handle final turn if it's the other speaker
+    if current_speaker == 'other' and turn_start is not None:
+        # Use last word time as approximation for turn end
+        turn_end = all_words[-1][0] + 1.0  # Add 1s buffer
+        if turn_end - turn_start >= min_turn_length:
+            turns.append((turn_start, turn_end))
+
+    if len(turns) == 0:
+        logger.warning("No turns found for other speaker")
+        return np.full(len(meg_times), np.nan)
+
+    logger.info(f"Found {len(turns)} turns for other speaker (listener perspective)")
+
+    # Compute turn length statistics
+    turn_lengths = [(end - start) for start, end in turns]
+    logger.info(f"Turn lengths: mean={np.mean(turn_lengths):.2f}s, "
+                f"median={np.median(turn_lengths):.2f}s, "
+                f"range={np.min(turn_lengths):.2f}-{np.max(turn_lengths):.2f}s")
+
+    # For each MEG time point, compute proportion through current turn
+    proportion = np.full(len(meg_times), np.nan)
+
+    for turn_start, turn_end in turns:
+        # Find MEG samples within this turn
+        turn_mask = (meg_times >= turn_start) & (meg_times < turn_end)
+
+        # Compute proportion for each sample in this turn
+        turn_times = meg_times[turn_mask]
+        turn_duration = turn_end - turn_start
+
+        if turn_duration > 0:
+            proportions = (turn_times - turn_start) / turn_duration
+            proportion[turn_mask] = proportions
+
+    # Compute statistics on valid (non-NaN) proportions
+    valid_proportions = proportion[~np.isnan(proportion)]
+    n_valid = len(valid_proportions)
+    n_total = len(proportion)
+
+    if n_valid > 0:
+        n_first_half = np.sum(valid_proportions < 0.5)
+        n_second_half = np.sum(valid_proportions >= 0.5)
+
+        logger.info(f"Proportion-through-turn: {n_valid}/{n_total} samples in other speaker's turns")
+        logger.info(f"  First half (< 0.5): {n_first_half} samples ({n_first_half/n_valid*100:.1f}%)")
+        logger.info(f"  Second half (>= 0.5): {n_second_half} samples ({n_second_half/n_valid*100:.1f}%)")
+    else:
+        logger.warning("No valid proportion values computed")
+
+    return proportion
