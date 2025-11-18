@@ -751,3 +751,114 @@ def create_pause_predictor(
         pause[idx] = pause_val
 
     return pause
+
+
+def create_distance_to_turn_predictor(
+    own_word_times_meg: np.ndarray,
+    other_word_times_meg: np.ndarray,
+    meg_times: np.ndarray,
+    max_distance: float = 5.0,
+) -> np.ndarray:
+    """
+    Create distance-to-turn predictor.
+
+    For each time point, compute temporal distance to the next turn boundary
+    where the OTHER speaker will finish (i.e., when this speaker will take over).
+
+    This captures turn-taking proximity from the listener's perspective:
+    - When analyzing interviewer speech (participant listening), distance measures
+      how close participant is to taking their turn (end of interviewer turns)
+    - When analyzing participant speech (interviewer listening), distance measures
+      how close interviewer is to taking their turn (end of participant turns)
+
+    Parameters
+    ----------
+    own_word_times_meg : np.ndarray
+        Word onset times for the speaker being analyzed (MEG timebase, seconds)
+    other_word_times_meg : np.ndarray
+        Word onset times for the other speaker (MEG timebase, seconds)
+    meg_times : np.ndarray
+        MEG time points (seconds)
+    max_distance : float
+        Maximum distance to track (seconds). Beyond this, distance is capped.
+
+    Returns
+    -------
+    distance_to_turn : np.ndarray
+        Continuous predictor with distance to next turn boundary (seconds).
+        High values = far from boundary, low values = close to boundary.
+
+    Notes
+    -----
+    Turn boundaries are defined as points where the other speaker's turn ends
+    (i.e., where this speaker will potentially take over). Distance is computed
+    as time until the next such boundary.
+
+    Example:
+        If analyzing interviewer speech (participant listening):
+        - Turn boundaries = ends of interviewer turns
+        - Distance = time until interviewer finishes and participant can speak
+        - Hypothesis: As distance decreases, participant is preparing to speak,
+          so surprisal in interviewer's speech matters less
+    """
+    # Identify all words chronologically from both speakers
+    all_words = []
+    for t in own_word_times_meg:
+        all_words.append((t, 'own'))
+    for t in other_word_times_meg:
+        all_words.append((t, 'other'))
+
+    # Sort by time
+    all_words = sorted(all_words, key=lambda x: x[0])
+
+    if len(all_words) < 2:
+        logger.warning("Not enough words to identify turn boundaries")
+        return np.ones(len(meg_times)) * max_distance
+
+    # Identify turn boundaries (speaker switches from other to own)
+    # These are points where the listener (own speaker) takes over
+    turn_boundaries = []
+    for i in range(len(all_words) - 1):
+        current_time, current_speaker = all_words[i]
+        next_time, next_speaker = all_words[i + 1]
+
+        # Turn boundary: other speaker ends, own speaker begins
+        if current_speaker == 'other' and next_speaker == 'own':
+            # Use midpoint between last other-speaker word and first own-speaker word
+            boundary_time = (current_time + next_time) / 2.0
+            turn_boundaries.append(boundary_time)
+
+    turn_boundaries = np.array(turn_boundaries)
+
+    if len(turn_boundaries) == 0:
+        logger.warning("No turn boundaries found (no speaker switches)")
+        return np.ones(len(meg_times)) * max_distance
+
+    logger.info(f"Found {len(turn_boundaries)} turn boundaries (listener taking over)")
+
+    # For each MEG time point, find distance to next turn boundary
+    distance_to_turn = np.zeros(len(meg_times))
+
+    for i, t in enumerate(meg_times):
+        # Find all future boundaries
+        future_boundaries = turn_boundaries[turn_boundaries > t]
+
+        if len(future_boundaries) > 0:
+            # Distance to next boundary
+            distance = future_boundaries[0] - t
+        else:
+            # No future boundaries, cap at max
+            distance = max_distance
+
+        # Cap at maximum distance
+        distance_to_turn[i] = min(distance, max_distance)
+
+    # Compute statistics
+    mean_dist = np.mean(distance_to_turn[distance_to_turn < max_distance])
+    median_dist = np.median(distance_to_turn[distance_to_turn < max_distance])
+    n_capped = np.sum(distance_to_turn >= max_distance)
+
+    logger.info(f"Distance-to-turn predictor: mean={mean_dist:.2f}s, median={median_dist:.2f}s, "
+                f"{n_capped}/{len(meg_times)} time points capped at {max_distance}s")
+
+    return distance_to_turn

@@ -19,9 +19,9 @@ Benefits:
 - 10ms resolution adequate for word-level analysis (~200ms between words)
 - No post-hoc downsampling artifacts (predictor impulses stay clean)
 
-Predictors added (19 total, grouped by speaker):
+Predictors added (21 total, grouped by speaker):
 
-INTERVIEWER (9 channels):
+INTERVIEWER (10 channels):
 - MISC_envelope_interviewer: Interviewer audio envelope (external)
 - MISC_envelope_meg_mic7: MEG MISC 007 envelope (interviewer, for sync verification)
 - MISC_f0_interviewer: Interviewer F0 contour (speaker-masked)
@@ -31,8 +31,9 @@ INTERVIEWER (9 channels):
 - MISC_f0_deviation_interviewer: Z-scored F0 deviations (prosodic unexpectedness)
 - MISC_duration_deviation_interviewer: Z-scored duration deviations
 - MISC_pause_interviewer: Time since last interviewer word (normalized to 0-1)
+- MISC_distance_to_turn_interviewer: Distance to next turn boundary (participant takes over)
 
-PARTICIPANT (9 channels):
+PARTICIPANT (10 channels):
 - MISC_envelope_participant: Participant audio envelope (external)
 - MISC_envelope_meg_mic8: MEG MISC 008 envelope (participant, for sync verification)
 - MISC_f0_participant: Participant F0 contour (speaker-masked)
@@ -42,6 +43,7 @@ PARTICIPANT (9 channels):
 - MISC_f0_deviation_participant: Z-scored F0 deviations (prosodic unexpectedness)
 - MISC_duration_deviation_participant: Z-scored duration deviations
 - MISC_pause_participant: Time since last participant word (normalized to 0-1)
+- MISC_distance_to_turn_participant: Distance to next turn boundary (interviewer takes over)
 
 Note: Surprisal is conversation-aware - each word's surprisal is calculated
 based on the full chronological conversation history (both speakers), capturing
@@ -90,6 +92,7 @@ from predictors.trf_predictors import (
     create_f0_deviation_predictor,
     create_duration_deviation_predictor,
     create_pause_predictor,
+    create_distance_to_turn_predictor,
 )
 
 # All available subjects
@@ -480,18 +483,36 @@ def process_subject_run(
         normalize=True
     )
 
-    print("  19/19: Pause (participant)...")
+    print("  19/21: Pause (participant)...")
     pause_participant = create_pause_predictor(
         word_times_participant_meg,
         meg_times,
         normalize=True
     )
 
+    print("  20/21: Distance-to-turn (interviewer)...")
+    # For interviewer: distance to when participant takes over (end of interviewer turns)
+    distance_to_turn_interviewer = create_distance_to_turn_predictor(
+        own_word_times_meg=word_times_interviewer_meg,
+        other_word_times_meg=word_times_participant_meg,
+        meg_times=meg_times,
+        max_distance=5.0
+    )
+
+    print("  21/21: Distance-to-turn (participant)...")
+    # For participant: distance to when interviewer takes over (end of participant turns)
+    distance_to_turn_participant = create_distance_to_turn_predictor(
+        own_word_times_meg=word_times_participant_meg,
+        other_word_times_meg=word_times_interviewer_meg,
+        meg_times=meg_times,
+        max_distance=5.0
+    )
+
     # Create info for new channels
     print("\nAdding predictors as MISC channels...")
     # Channels grouped by speaker for easy visualization
     ch_names = [
-        # Interviewer group (9 channels)
+        # Interviewer group (10 channels)
         'MISC_envelope_interviewer',
         'MISC_envelope_meg_mic7',
         'MISC_f0_interviewer',
@@ -501,7 +522,8 @@ def process_subject_run(
         'MISC_f0_deviation_interviewer',
         'MISC_duration_deviation_interviewer',
         'MISC_pause_interviewer',
-        # Participant group (9 channels)
+        'MISC_distance_to_turn_interviewer',
+        # Participant group (10 channels)
         'MISC_envelope_participant',
         'MISC_envelope_meg_mic8',
         'MISC_f0_participant',
@@ -511,6 +533,7 @@ def process_subject_run(
         'MISC_f0_deviation_participant',
         'MISC_duration_deviation_participant',
         'MISC_pause_participant',
+        'MISC_distance_to_turn_participant',
         # Shared (1 channel)
         'MISC_speaker',
     ]
@@ -529,6 +552,7 @@ def process_subject_run(
         f0_deviation_interviewer,
         duration_deviation_interviewer,
         pause_interviewer,
+        distance_to_turn_interviewer,
         # Participant group
         env_participant,
         env_meg_mic8,
@@ -539,6 +563,7 @@ def process_subject_run(
         f0_deviation_participant,
         duration_deviation_participant,
         pause_participant,
+        distance_to_turn_participant,
         # Shared
         speaker.astype(float),
     ])
