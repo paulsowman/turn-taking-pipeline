@@ -187,10 +187,14 @@ def analyze_stratified_trf(
 
         # Convert to eelbrain NDVar
         time_dim = eelbrain.UTS(0, 1.0/raw_masked.info['sfreq'], meg_data_array.shape[1])
-        sensor_dim = eelbrain.Sensor(
-            locs=np.array([raw_masked.info['chs'][i]['loc'][:3] for i in meg_picks]),
-            names=[raw_masked.info['ch_names'][i] for i in meg_picks]
-        )
+
+        # Create sensor dimension from MNE info
+        ch_info = mne.pick_info(raw_masked.info, meg_picks)
+        try:
+            sensor_dim = eelbrain.load.mne.sensor_dim(ch_info)
+        except (AttributeError, TypeError):
+            sensor_dim = eelbrain.Case
+
         meg = eelbrain.NDVar(meg_data_array, dims=(sensor_dim, time_dim), name='MEG')
 
         # Extract predictors
