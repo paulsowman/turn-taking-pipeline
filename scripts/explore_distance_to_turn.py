@@ -29,7 +29,7 @@ def main():
     args = parser.parse_args()
 
     # Load combined FIF file
-    fif_file = Path(f'outputs/combined_runs/{args.subject}/{args.condition}_combined.fif')
+    fif_file = Path(f'outputs/trf_combined/{args.subject}/{args.subject}_{args.condition}_trf_raw.fif')
 
     if not fif_file.exists():
         print(f"ERROR: Combined FIF file not found: {fif_file}")
