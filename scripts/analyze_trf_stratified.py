@@ -172,42 +172,40 @@ def analyze_stratified_trf(
         print(f"FITTING TRF: {stratum_name.upper()} FROM BOUNDARY")
         print("="*70)
 
-        # Create masked raw object (set non-mask periods to zero)
-        raw_masked = raw.copy()
+        # Extract only the masked time points for all channels
+        # This creates discontinuous data, which we'll concatenate
 
-        # Zero out data outside the mask for all channels
-        for ch_idx in range(len(raw_masked.ch_names)):
-            ch_data = raw_masked.get_data(picks=[ch_idx])
-            ch_data[:, ~mask] = 0
-            raw_masked._data[ch_idx] = ch_data[0]
-
-        # Extract MEG data
-        meg_picks = mne.pick_types(raw_masked.info, meg=True)
-        meg_data_array, _ = raw_masked[meg_picks, :]
+        # Extract MEG data for masked time points only
+        meg_picks = mne.pick_types(raw.info, meg=True)
+        meg_data_full, _ = raw[meg_picks, :]
+        meg_data_masked = meg_data_full[:, mask]  # Shape: (n_sensors, n_masked_samples)
 
         # Convert to eelbrain NDVar
-        time_dim = eelbrain.UTS(0, 1.0/raw_masked.info['sfreq'], meg_data_array.shape[1])
+        n_masked_samples = np.sum(mask)
+        time_dim = eelbrain.UTS(0, 1.0/raw.info['sfreq'], n_masked_samples)
 
         # Create sensor dimension from MNE info
-        ch_info = mne.pick_info(raw_masked.info, meg_picks)
+        ch_info = mne.pick_info(raw.info, meg_picks)
         try:
             sensor_dim = eelbrain.load.mne.sensor_dim(ch_info)
         except (AttributeError, TypeError):
             sensor_dim = eelbrain.Case
 
-        meg = eelbrain.NDVar(meg_data_array, dims=(sensor_dim, time_dim), name='MEG')
+        meg = eelbrain.NDVar(meg_data_masked, dims=(sensor_dim, time_dim), name='MEG')
 
-        # Extract predictors
+        # Extract predictors for masked time points only
         predictors = {}
-        print("\nPredictors:")
+        print("\nPredictors (masked time points only):")
         for name, ch in predictor_channels.items():
-            if ch in raw_masked.ch_names:
-                ch_idx = raw_masked.ch_names.index(ch)
-                pred_data, _ = raw_masked[ch_idx, :]
-                predictors[name] = eelbrain.NDVar(pred_data[0], dims=(time_dim,), name=name)
+            if ch in raw.ch_names:
+                ch_idx = raw.ch_names.index(ch)
+                pred_data_full, _ = raw[ch_idx, :]
+                pred_data_masked = pred_data_full[0, mask]  # Extract masked samples
 
-                # Count non-zero in masked region only
-                n_nonzero = np.sum((pred_data[0] != 0) & mask)
+                predictors[name] = eelbrain.NDVar(pred_data_masked, dims=(time_dim,), name=name)
+
+                # Count non-zero in masked data
+                n_nonzero = np.sum(pred_data_masked != 0)
                 print(f"  {name:25s}: {n_nonzero:6d} non-zero samples in {stratum_name}")
             else:
                 print(f"  WARNING: {ch} not found")
