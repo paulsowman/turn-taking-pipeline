@@ -420,13 +420,33 @@ def analyze_condition(subject, condition, speaker='participant', save_plots=True
 
         for i, (pred_name, h) in enumerate(zip(predictor_names, h_list)):
             try:
-                # Use matplotlib backend for static plots
+                # Eelbrain TopoButterfly plot (auto-selected time points)
                 p = eelbrain.plot.TopoButterfly(h, vmax=None)
                 p.save(output_dir / f'trf_{pred_name}.png', dpi=300)
-                print(f"  ✓ Saved: trf_{pred_name}.png")
+                print(f"  ✓ Saved: trf_{pred_name}.png (auto time points)")
                 p.close()
             except Exception as e:
                 print(f"  ✗ Error plotting {pred_name}: {e}")
+
+            # Create custom topo plot at specific latencies
+            try:
+                times_h = h.time.times if hasattr(h.time, 'times') else h.time
+
+                # Define latencies of interest (in seconds)
+                latencies = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4]  # 50, 100, 150, 200, 300, 400ms
+
+                # Filter to only include latencies within data range
+                valid_latencies = [t for t in latencies if times_h[0] <= t <= times_h[-1]]
+
+                if len(valid_latencies) > 0:
+                    # Create array plot with specific time points
+                    p_array = eelbrain.plot.TopoArray(h, t=valid_latencies, vmax=None)
+                    p_array.save(output_dir / f'trf_{pred_name}_topos.png', dpi=300)
+                    lat_ms = [f"{t*1000:.0f}ms" for t in valid_latencies]
+                    print(f"  ✓ Saved: trf_{pred_name}_topos.png (at {', '.join(lat_ms)})")
+                    p_array.close()
+            except Exception as e:
+                print(f"  ✗ Error creating topo array: {e}")
 
             # Always create 3-panel plot (polarity-aligned + best sensor + RMS)
             try:
