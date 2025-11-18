@@ -7,28 +7,53 @@ set -e  # Exit on error
 
 # Configuration
 SPEAKER="interviewer"  # Fixed: analyzing interviewer speech (participant listening)
-SUBJECTS=("sub-01" "sub-02" "sub-03" "sub-04" "sub-05" "sub-06" "sub-07" "sub-08" "sub-09" "sub-10")
 RUNS=(1 2 3 4 5)
 VENV_PATH="venv"  # Adjust if your venv is elsewhere
 CONDA_ENV="mfa"   # Adjust if your conda env has a different name
+DATA_DIR="data"   # Root data directory to check for subject existence
 
 echo "========================================================================"
 echo "TURN-TAKING PIPELINE - PROCESSING ALL SUBJECTS (FRESH REDO)"
 echo "========================================================================"
 echo "Speaker: $SPEAKER (analyzing interviewer speech)"
-echo "Subjects: ${SUBJECTS[@]}"
+echo "Subject range: sub-01 to sub-32 (will skip missing subjects)"
 echo "Runs per subject: ${RUNS[@]}"
 echo "venv: $VENV_PATH"
 echo "conda env: $CONDA_ENV"
 echo ""
 echo "WARNING: --overwrite flags are SET - this will regenerate all files!"
 echo ""
+
+# Count available subjects
+SUBJECT_COUNT=0
+for i in {1..32}; do
+    SUBJECT=$(printf "sub-%02d" $i)
+    if [ -d "$DATA_DIR/$SUBJECT" ]; then
+        SUBJECT_COUNT=$((SUBJECT_COUNT + 1))
+    fi
+done
+echo "Found $SUBJECT_COUNT subjects in $DATA_DIR/"
+echo ""
 read -p "Press Enter to continue or Ctrl+C to cancel..."
 
-for SUBJECT in "${SUBJECTS[@]}"; do
+# Process subjects sub-01 through sub-32, skipping missing ones
+PROCESSED_COUNT=0
+SKIPPED_COUNT=0
+
+for i in {1..32}; do
+    SUBJECT=$(printf "sub-%02d" $i)
+
+    # Check if subject directory exists
+    if [ ! -d "$DATA_DIR/$SUBJECT" ]; then
+        echo ""
+        echo "⊘ Skipping $SUBJECT (directory not found)"
+        SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+        continue
+    fi
+
     echo ""
     echo "========================================================================"
-    echo "PROCESSING $SUBJECT"
+    echo "PROCESSING $SUBJECT ($((PROCESSED_COUNT + 1))/$SUBJECT_COUNT)"
     echo "========================================================================"
 
     # Activate venv for Steps 1-2
@@ -114,12 +139,17 @@ for SUBJECT in "${SUBJECTS[@]}"; do
     echo ""
     echo "✓ $SUBJECT complete!"
     echo ""
+
+    PROCESSED_COUNT=$((PROCESSED_COUNT + 1))
 done
 
 echo ""
 echo "========================================================================"
 echo "ALL SUBJECTS PROCESSED SUCCESSFULLY"
 echo "========================================================================"
+echo "Processed: $PROCESSED_COUNT subjects"
+echo "Skipped: $SKIPPED_COUNT subjects (not found)"
+echo ""
 echo "Results:"
 echo "  - Basic TRF: outputs/trf_analysis/{subject}/"
 if [[ "$SPEAKER" != "both" ]]; then
