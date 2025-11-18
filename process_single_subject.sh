@@ -1,24 +1,35 @@
 #!/bin/bash
 # Process a single subject through the complete TRF pipeline
-# Usage: ./process_single_subject.sh sub-02
+# Usage: ./process_single_subject.sh sub-02 [speaker]
+# speaker: participant (default), interviewer, or both
 
 set -e  # Exit on error
 
 # Configuration
 SUBJECT="$1"
+SPEAKER="${2:-participant}"  # Default to participant if not specified
 RUNS=(1 2 3 4 5)
 VENV_PATH="venv"  # Adjust if your venv is elsewhere
 CONDA_ENV="mfa"   # Adjust if your conda env has a different name
 
 if [ -z "$SUBJECT" ]; then
     echo "Error: No subject specified"
-    echo "Usage: ./process_single_subject.sh sub-01"
+    echo "Usage: ./process_single_subject.sh sub-01 [speaker]"
+    echo "  speaker: participant (default), interviewer, or both"
+    exit 1
+fi
+
+# Validate speaker
+if [[ ! "$SPEAKER" =~ ^(participant|interviewer|both)$ ]]; then
+    echo "Error: Invalid speaker '$SPEAKER'"
+    echo "Valid options: participant, interviewer, both"
     exit 1
 fi
 
 echo "========================================================================"
 echo "TURN-TAKING PIPELINE - PROCESSING $SUBJECT"
 echo "========================================================================"
+echo "Speaker: $SPEAKER"
 echo "Runs: ${RUNS[@]}"
 echo "venv: $VENV_PATH"
 echo "conda env: $CONDA_ENV"
@@ -75,8 +86,8 @@ python scripts/combine_runs.py --subject "$SUBJECT"
 
 # Step 7: TRF analysis (with parameters for 0ms visualization start)
 echo ""
-echo "Step 7: TRF analysis"
-python scripts/analyze_trf_combined.py "$SUBJECT" --compare --speaker participant \
+echo "Step 7: TRF analysis (speaker: $SPEAKER)"
+python scripts/analyze_trf_combined.py "$SUBJECT" --compare --speaker "$SPEAKER" \
     --tstart -0.05 --tstop 0.6 --crop-start -0.05 --crop-stop 0.55
 
 deactivate

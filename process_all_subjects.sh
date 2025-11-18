@@ -1,18 +1,28 @@
 #!/bin/bash
 # Process all subjects through the complete TRF pipeline
-# Switches between venv (for most steps) and conda (for MFA)
+# Usage: ./process_all_subjects.sh [speaker]
+# speaker: participant (default), interviewer, or both
 
 set -e  # Exit on error
 
 # Configuration
+SPEAKER="${1:-participant}"  # Default to participant if not specified
 SUBJECTS=("sub-01" "sub-02" "sub-03" "sub-04" "sub-05" "sub-06" "sub-07" "sub-08" "sub-09" "sub-10")
 RUNS=(1 2 3 4 5)
 VENV_PATH="venv"  # Adjust if your venv is elsewhere
 CONDA_ENV="mfa"   # Adjust if your conda env has a different name
 
+# Validate speaker
+if [[ ! "$SPEAKER" =~ ^(participant|interviewer|both)$ ]]; then
+    echo "Error: Invalid speaker '$SPEAKER'"
+    echo "Valid options: participant, interviewer, both"
+    exit 1
+fi
+
 echo "========================================================================"
 echo "TURN-TAKING PIPELINE - PROCESSING ALL SUBJECTS"
 echo "========================================================================"
+echo "Speaker: $SPEAKER"
 echo "Subjects: ${SUBJECTS[@]}"
 echo "Runs per subject: ${RUNS[@]}"
 echo "venv: $VENV_PATH"
@@ -77,8 +87,8 @@ for SUBJECT in "${SUBJECTS[@]}"; do
 
     # Step 7: TRF analysis (with parameters for 0ms visualization start)
     echo ""
-    echo "Step 7: TRF analysis"
-    python scripts/analyze_trf_combined.py "$SUBJECT" --compare --speaker participant \
+    echo "Step 7: TRF analysis (speaker: $SPEAKER)"
+    python scripts/analyze_trf_combined.py "$SUBJECT" --compare --speaker "$SPEAKER" \
         --tstart -0.05 --tstop 0.6 --crop-start -0.05 --crop-stop 0.55
 
     deactivate
