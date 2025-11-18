@@ -105,7 +105,12 @@ def analyze_stratified_trf(
     raw = mne.io.read_raw_fif(fif_file, preload=True, verbose=False)
 
     # Get proportion-through-turn predictor
-    proportion_channel = f'MISC_proportion_through_turn_{speaker}'
+    # IMPORTANT: For the turn-taking hypothesis, we need the LISTENER's progression
+    # through turns, not the speaker's.
+    # - If analyzing interviewer speech, participant is listening
+    # - If analyzing participant speech, interviewer is listening
+    listener = 'participant' if speaker == 'interviewer' else 'interviewer'
+    proportion_channel = f'MISC_proportion_through_turn_{listener}'
 
     if proportion_channel not in raw.ch_names:
         print(f"\n✗ ERROR: Channel {proportion_channel} not found")
@@ -114,6 +119,7 @@ def analyze_stratified_trf(
 
     # Extract proportion predictor
     print(f"\nExtracting stratification predictor: {proportion_channel}")
+    print(f"  (Listener = {listener}, stratifying by progression through {speaker}'s turns)")
     ch_idx = raw.ch_names.index(proportion_channel)
     proportion_data, meg_times_array = raw[ch_idx, :]
     proportion_data = proportion_data[0]  # Shape: (1, n_times) -> (n_times,)
