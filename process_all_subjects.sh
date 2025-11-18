@@ -10,7 +10,7 @@ SPEAKER="interviewer"  # Fixed: analyzing interviewer speech (participant listen
 RUNS=(1 2 3 4 5)
 VENV_PATH="venv"  # Adjust if your venv is elsewhere
 CONDA_ENV="mfa"   # Adjust if your conda env has a different name
-DATA_DIR="data"   # Root data directory to check for subject existence
+SYNC_DIR="outputs/sync"  # Check for subjects with existing sync data
 
 echo "========================================================================"
 echo "TURN-TAKING PIPELINE - PROCESSING ALL SUBJECTS (FRESH REDO)"
@@ -24,15 +24,15 @@ echo ""
 echo "WARNING: --overwrite flags are SET - this will regenerate all files!"
 echo ""
 
-# Count available subjects
+# Count available subjects (with existing sync data)
 SUBJECT_COUNT=0
 for i in {1..32}; do
     SUBJECT=$(printf "sub-%02d" $i)
-    if [ -d "$DATA_DIR/$SUBJECT" ]; then
+    if [ -d "$SYNC_DIR/$SUBJECT" ]; then
         SUBJECT_COUNT=$((SUBJECT_COUNT + 1))
     fi
 done
-echo "Found $SUBJECT_COUNT subjects in $DATA_DIR/"
+echo "Found $SUBJECT_COUNT subjects in $SYNC_DIR/"
 echo ""
 read -p "Press Enter to continue or Ctrl+C to cancel..."
 
@@ -43,10 +43,10 @@ SKIPPED_COUNT=0
 for i in {1..32}; do
     SUBJECT=$(printf "sub-%02d" $i)
 
-    # Check if subject directory exists
-    if [ ! -d "$DATA_DIR/$SUBJECT" ]; then
+    # Check if subject has existing sync data
+    if [ ! -d "$SYNC_DIR/$SUBJECT" ]; then
         echo ""
-        echo "⊘ Skipping $SUBJECT (directory not found)"
+        echo "⊘ Skipping $SUBJECT (no sync data found)"
         SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
         continue
     fi
