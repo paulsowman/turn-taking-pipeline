@@ -164,273 +164,222 @@ def analyze_stratified_trf(
     else:
         predictor_channels = all_predictor_channels
 
-    # Fit TRF for each stratification level
+    # Create stratified predictors using implicit masking (like speaker selection)
+    # Instead of splitting data, we create duplicate predictors masked by condition
+    print("\n" + "="*70)
+    print("CREATING STRATIFIED PREDICTORS")
+    print("="*70)
+
+    # Extract MEG data (full, continuous)
+    meg_picks = mne.pick_types(raw.info, meg=True)
+    meg_data_array, _ = raw[meg_picks, :]
+
+    # Convert to eelbrain NDVar
+    time_dim = eelbrain.UTS(0, 1.0/raw.info['sfreq'], meg_data_array.shape[1])
+
+    # Create sensor dimension from MNE info
+    ch_info = mne.pick_info(raw.info, meg_picks)
+    try:
+        sensor_dim = eelbrain.load.mne.sensor_dim(ch_info)
+    except (AttributeError, TypeError):
+        sensor_dim = eelbrain.Case
+
+    meg = eelbrain.NDVar(meg_data_array, dims=(sensor_dim, time_dim), name='MEG')
+
+    # Create stratified predictors by masking
+    predictors = {}
+    predictor_names_far = []
+    predictor_names_close = []
+
+    print("\nCreating FAR and CLOSE versions of each predictor:")
+    for name, ch in predictor_channels.items():
+        if ch in raw.ch_names:
+            ch_idx = raw.ch_names.index(ch)
+            pred_data, _ = raw[ch_idx, :]
+            pred_data = pred_data[0]
+
+            # Create FAR version (first half of turns)
+            pred_far = pred_data.copy()
+            pred_far[~far_mask] = 0
+            predictors[f'{name}_far'] = eelbrain.NDVar(pred_far, dims=(time_dim,), name=f'{name}_far')
+            predictor_names_far.append(f'{name}_far')
+
+            # Create CLOSE version (second half of turns)
+            pred_close = pred_data.copy()
+            pred_close[~close_mask] = 0
+            predictors[f'{name}_close'] = eelbrain.NDVar(pred_close, dims=(time_dim,), name=f'{name}_close')
+            predictor_names_close.append(f'{name}_close')
+
+            # Count non-zero samples
+            n_far = np.sum(pred_far != 0)
+            n_close = np.sum(pred_close != 0)
+            print(f"  {name:25s}: {n_far:6d} non-zero (far), {n_close:6d} non-zero (close)")
+        else:
+            print(f"  WARNING: {ch} not found")
+
+    if len(predictors) == 0:
+        print("\n✗ ERROR: No predictors found!")
+        return None
+
+    # Fit single TRF model with all stratified predictors
+    print("\n" + "="*70)
+    print("FITTING STRATIFIED TRF MODEL")
+    print("="*70)
+    print(f"Total predictors: {len(predictors)} ({len(predictor_channels)} × 2 conditions)")
+    print(f"Window: {tstart*1000:.0f}ms to {tstop*1000:.0f}ms")
+
+    predictor_ndvars = tuple(predictors.values())
+
+    try:
+        trf = eelbrain.boosting(
+            meg,
+            predictor_ndvars,
+            tstart=tstart,
+            tstop=tstop,
+            basis=0.050,
+            error='l1',
+            partitions=5,
+            selective_stopping=True,
+        )
+        print("\n✓ TRF model fitted!")
+    except Exception as e:
+        print(f"\n✗ ERROR fitting TRF: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+    # Extract kernels for far and close conditions
     results = {}
+    all_predictor_names = list(predictors.keys())
 
-    for stratum_name, mask in [('far', far_mask), ('close', close_mask)]:
-        print("\n" + "="*70)
-        print(f"FITTING TRF: {stratum_name.upper()} FROM BOUNDARY")
-        print("="*70)
+    # Save the full model
+    output_dir = Path(f'outputs/trf_analysis/{subject}/{condition}_stratified_{speaker}')
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Identify continuous segments in the mask
-        # Find where mask transitions from False to True (segment starts)
-        # and True to False (segment ends)
-        mask_diff = np.diff(mask.astype(int))
-        segment_starts = np.where(mask_diff == 1)[0] + 1  # Transition to True
-        segment_ends = np.where(mask_diff == -1)[0] + 1   # Transition to False
+    model_file = output_dir / 'trf_stratified_model.pickle'
+    with open(model_file, 'wb') as f:
+        pickle.dump(trf, f)
+    print(f"\n✓ Saved full stratified model: {model_file}")
 
-        # Handle edge cases
-        if mask[0]:
-            segment_starts = np.concatenate([[0], segment_starts])
-        if mask[-1]:
-            segment_ends = np.concatenate([segment_ends, [len(mask)]])
+    # Extract and store kernels for each condition
+    print("\n" + "="*70)
+    print("EXTRACTING KERNELS BY CONDITION")
+    print("="*70)
 
-        n_segments = len(segment_starts)
-        print(f"\nIdentified {n_segments} continuous segments in {stratum_name} condition")
+    for stratum_name, pred_names in [('far', predictor_names_far), ('close', predictor_names_close)]:
+        print(f"\n{stratum_name.upper()}:")
+        # Extract kernel indices for this condition's predictors
+        kernel_indices = [all_predictor_names.index(name) for name in pred_names]
 
-        # Extract only the masked time points for all channels
-        # This creates discontinuous data, which we'll concatenate
+        # Store kernels for this condition
+        results[stratum_name] = {
+            'kernel_indices': kernel_indices,
+            'predictor_names': [name.replace(f'_{stratum_name}', '') for name in pred_names],  # Remove suffix for display
+        }
 
-        # Extract MEG data for masked time points only
-        meg_picks = mne.pick_types(raw.info, meg=True)
-        meg_data_full, _ = raw[meg_picks, :]
-        meg_data_masked = meg_data_full[:, mask]  # Shape: (n_sensors, n_masked_samples)
+    # Create comparison plots for each predictor
+    predictor_base_names = results['far']['predictor_names']
 
-        # Create mapping from concatenated index to segment boundaries
-        # We need to mark concatenation points as bad
-        concatenated_length = np.sum(mask)
-        cumulative_lengths = []
-        current_pos = 0
-        for i, (start, end) in enumerate(zip(segment_starts, segment_ends)):
-            seg_len = end - start
-            cumulative_lengths.append(current_pos + seg_len)
-            current_pos += seg_len
+    for pred_idx, pred_name in enumerate(predictor_base_names):
+        print(f"\nComparing {pred_name}...")
 
-        # Concatenation boundaries are at cumulative_lengths[:-1]
-        # (the last one is just the end of data)
-        boundary_indices = cumulative_lengths[:-1]
+        # Get kernel indices for this predictor in far and close conditions
+        far_kernel_idx = results['far']['kernel_indices'][pred_idx]
+        close_kernel_idx = results['close']['kernel_indices'][pred_idx]
 
-        print(f"Concatenation boundaries at samples: {boundary_indices}")
+        # Extract kernels from the single fitted model
+        h_far = trf.h[far_kernel_idx] if isinstance(trf.h, tuple) else trf.h
+        h_close = trf.h[close_kernel_idx] if isinstance(trf.h, tuple) else trf.h
 
-        # Convert to eelbrain NDVar
-        n_masked_samples = np.sum(mask)
-        time_dim = eelbrain.UTS(0, 1.0/raw.info['sfreq'], n_masked_samples)
+        # Get times
+        times_far = h_far.time.times if hasattr(h_far.time, 'times') else h_far.time
+        times_close = h_close.time.times if hasattr(h_close.time, 'times') else h_close.time
 
-        # Create sensor dimension from MNE info
-        ch_info = mne.pick_info(raw.info, meg_picks)
-        try:
-            sensor_dim = eelbrain.load.mne.sensor_dim(ch_info)
-        except (AttributeError, TypeError):
-            sensor_dim = eelbrain.Case
+        # Extract data (average across sensors for visualization)
+        data_far = np.mean(h_far.x, axis=0) if len(h_far.x.shape) > 1 else h_far.x
+        data_close = np.mean(h_close.x, axis=0) if len(h_close.x.shape) > 1 else h_close.x
 
-        meg = eelbrain.NDVar(meg_data_masked, dims=(sensor_dim, time_dim), name='MEG')
+        # Create comparison plot
+        fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
 
-        # Extract predictors for masked time points only
-        predictors = {}
-        print("\nPredictors (masked time points only):")
-        for name, ch in predictor_channels.items():
-            if ch in raw.ch_names:
-                ch_idx = raw.ch_names.index(ch)
-                pred_data_full, _ = raw[ch_idx, :]
-                pred_data_masked = pred_data_full[0, mask]  # Extract masked samples
+        # Panel 1: Overlay
+        ax = axes[0]
+        ax.plot(times_far * 1000, data_far, color='blue', linewidth=2, label='FAR (first half)', alpha=0.8)
+        ax.plot(times_close * 1000, data_close, color='red', linewidth=2, label='CLOSE (second half)', alpha=0.8)
+        ax.axhline(0, color='black', linestyle='--', linewidth=0.5, alpha=0.5)
+        ax.axvline(0, color='black', linestyle='--', linewidth=0.5, alpha=0.5)
+        ax.set_ylabel('TRF Amplitude (sensor average)')
+        ax.set_title(f'{pred_name.upper()} TRF: Far vs Close to Turn Boundary')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
 
-                predictors[name] = eelbrain.NDVar(pred_data_masked, dims=(time_dim,), name=name)
+        # Panel 2: Difference (far - close)
+        ax = axes[1]
+        # Interpolate to common time axis if needed
+        if len(times_far) == len(times_close) and np.allclose(times_far, times_close):
+            diff = data_far - data_close
+            times_diff = times_far
+        else:
+            # Use shorter time axis
+            min_len = min(len(times_far), len(times_close))
+            diff = data_far[:min_len] - data_close[:min_len]
+            times_diff = times_far[:min_len]
 
-                # Count non-zero in masked data
-                n_nonzero = np.sum(pred_data_masked != 0)
-                print(f"  {name:25s}: {n_nonzero:6d} non-zero samples in {stratum_name}")
-            else:
-                print(f"  WARNING: {ch} not found")
+        ax.plot(times_diff * 1000, diff, color='purple', linewidth=2, label='Difference (far - close)')
+        ax.fill_between(times_diff * 1000, 0, diff, color='purple', alpha=0.3)
+        ax.axhline(0, color='black', linestyle='--', linewidth=0.5, alpha=0.5)
+        ax.axvline(0, color='black', linestyle='--', linewidth=0.5, alpha=0.5)
+        ax.set_xlabel('Time (ms)')
+        ax.set_ylabel('Difference in Amplitude')
+        ax.set_title('Difference: FAR minus CLOSE')
+        ax.grid(True, alpha=0.3)
 
-        if len(predictors) == 0:
-            print(f"\n✗ ERROR: No predictors found for {stratum_name}!")
-            continue
+        plt.tight_layout()
 
-        predictor_names = list(predictors.keys())
-        predictor_ndvars = tuple(predictors.values())
+        # Save plot
+        plot_file = output_dir / f'trf_{pred_name}_comparison.png'
+        plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"  ✓ Saved: {plot_file}")
 
-        # Create exclusion mask for concatenation boundaries
-        # Exclude samples within TRF window of boundaries to avoid spurious correlations
-        trf_buffer = max(abs(tstart), abs(tstop))
-        buffer_samples = int(np.ceil(trf_buffer * raw.info['sfreq']))
+    print("\n" + "="*70)
+    print("HYPOTHESIS TEST: SURPRISAL SENSITIVITY")
+    print("="*70)
 
-        exclusion_mask = np.ones(n_masked_samples, dtype=bool)
-        n_excluded = 0
-        for boundary_idx in boundary_indices:
-            # Exclude samples around this boundary
-            start_excl = max(0, boundary_idx - buffer_samples)
-            end_excl = min(n_masked_samples, boundary_idx + buffer_samples)
-            exclusion_mask[start_excl:end_excl] = False
-            n_excluded += (end_excl - start_excl)
+    if 'surprisal' in predictor_base_names:
+        surprisal_idx = predictor_base_names.index('surprisal')
+        far_kernel_idx = results['far']['kernel_indices'][surprisal_idx]
+        close_kernel_idx = results['close']['kernel_indices'][surprisal_idx]
 
-        print(f"\nExcluding concatenation boundaries:")
-        print(f"  TRF window: {tstart*1000:.0f} to {tstop*1000:.0f}ms")
-        print(f"  Buffer: ±{trf_buffer*1000:.0f}ms (±{buffer_samples} samples)")
-        print(f"  Boundaries: {len(boundary_indices)}")
-        print(f"  Excluded samples: {n_excluded} ({n_excluded/n_masked_samples*100:.1f}%)")
-        print(f"  Remaining for TRF: {np.sum(exclusion_mask)} samples ({np.sum(exclusion_mask)/raw.info['sfreq']:.1f}s)")
+        h_far = trf.h[far_kernel_idx]
+        h_close = trf.h[close_kernel_idx]
 
-        # Apply exclusion mask to MEG and predictors by setting excluded periods to NaN
-        # Eelbrain boosting will skip NaN values
-        meg_data_clean = meg_data_masked.copy()
-        meg_data_clean[:, ~exclusion_mask] = np.nan
-        meg = eelbrain.NDVar(meg_data_clean, dims=(sensor_dim, time_dim), name='MEG')
+        # Compute peak amplitudes
+        data_far = np.mean(h_far.x, axis=0) if len(h_far.x.shape) > 1 else h_far.x
+        data_close = np.mean(h_close.x, axis=0) if len(h_close.x.shape) > 1 else h_close.x
 
-        # Update predictors with exclusion mask
-        predictors_clean = {}
-        for name in predictor_names:
-            # Get already-masked predictor data and apply exclusion mask
-            pred_data_masked = predictors[name].x.copy()
-            pred_data_masked[~exclusion_mask] = np.nan
-            predictors_clean[name] = eelbrain.NDVar(pred_data_masked, dims=(time_dim,), name=name)
+        peak_far = np.max(np.abs(data_far))
+        peak_close = np.max(np.abs(data_close))
 
-        predictor_ndvars = tuple(predictors_clean.values())
+        times = h_far.time.times if hasattr(h_far.time, 'times') else h_far.time
+        peak_time_far = times[np.argmax(np.abs(data_far))] * 1000
+        peak_time_close = times[np.argmax(np.abs(data_close))] * 1000
 
-        # Fit TRF
-        print(f"\nFitting TRF for {stratum_name} condition...")
-        print(f"  Window: {tstart*1000:.0f}ms to {tstop*1000:.0f}ms")
-
-        try:
-            trf = eelbrain.boosting(
-                meg,
-                predictor_ndvars,
-                tstart=tstart,
-                tstop=tstop,
-                basis=0.050,
-                error='l1',
-                partitions=5,
-                selective_stopping=True,
-            )
-            print(f"✓ TRF fitted for {stratum_name}")
-
-            results[stratum_name] = {
-                'trf': trf,
-                'predictor_names': predictor_names,
-                'n_samples': n_far if stratum_name == 'far' else n_close,
-                'duration': duration_far if stratum_name == 'far' else duration_close,
-            }
-
-        except Exception as e:
-            print(f"✗ ERROR fitting TRF for {stratum_name}: {e}")
-            import traceback
-            traceback.print_exc()
-            continue
-
-    # Compare results
-    if 'far' in results and 'close' in results:
-        print("\n" + "="*70)
-        print("COMPARISON: FAR vs CLOSE TO BOUNDARY")
-        print("="*70)
-
-        # Create comparison plots
-        output_dir = Path(f'outputs/trf_analysis/{subject}/{condition}_stratified_{speaker}')
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save models
-        for stratum_name, result in results.items():
-            model_file = output_dir / f'trf_{stratum_name}_model.pickle'
-            with open(model_file, 'wb') as f:
-                pickle.dump(result['trf'], f)
-            print(f"✓ Saved {stratum_name} model: {model_file}")
-
-        # Create comparison plots for each predictor
-        predictor_names = results['far']['predictor_names']
-
-        for pred_idx, pred_name in enumerate(predictor_names):
-            print(f"\nComparing {pred_name}...")
-
-            # Extract kernels
-            h_far = results['far']['trf'].h[pred_idx] if isinstance(results['far']['trf'].h, tuple) else results['far']['trf'].h
-            h_close = results['close']['trf'].h[pred_idx] if isinstance(results['close']['trf'].h, tuple) else results['close']['trf'].h
-
-            # Get times
-            times_far = h_far.time.times if hasattr(h_far.time, 'times') else h_far.time
-            times_close = h_close.time.times if hasattr(h_close.time, 'times') else h_close.time
-
-            # Extract data (average across sensors for visualization)
-            data_far = np.mean(h_far.x, axis=0) if len(h_far.x.shape) > 1 else h_far.x
-            data_close = np.mean(h_close.x, axis=0) if len(h_close.x.shape) > 1 else h_close.x
-
-            # Create comparison plot
-            fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
-
-            # Panel 1: Overlay
-            ax = axes[0]
-            ax.plot(times_far * 1000, data_far, color='blue', linewidth=2, label='FAR (first half)', alpha=0.8)
-            ax.plot(times_close * 1000, data_close, color='red', linewidth=2, label='CLOSE (second half)', alpha=0.8)
-            ax.axhline(0, color='black', linestyle='--', linewidth=0.5, alpha=0.5)
-            ax.axvline(0, color='black', linestyle='--', linewidth=0.5, alpha=0.5)
-            ax.set_ylabel('TRF Amplitude (sensor average)')
-            ax.set_title(f'{pred_name.upper()} TRF: Far vs Close to Turn Boundary')
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-
-            # Panel 2: Difference (far - close)
-            ax = axes[1]
-            # Interpolate to common time axis if needed
-            if len(times_far) == len(times_close) and np.allclose(times_far, times_close):
-                diff = data_far - data_close
-                times_diff = times_far
-            else:
-                # Use shorter time axis
-                min_len = min(len(times_far), len(times_close))
-                diff = data_far[:min_len] - data_close[:min_len]
-                times_diff = times_far[:min_len]
-
-            ax.plot(times_diff * 1000, diff, color='purple', linewidth=2, label='Difference (far - close)')
-            ax.fill_between(times_diff * 1000, 0, diff, color='purple', alpha=0.3)
-            ax.axhline(0, color='black', linestyle='--', linewidth=0.5, alpha=0.5)
-            ax.axvline(0, color='black', linestyle='--', linewidth=0.5, alpha=0.5)
-            ax.set_xlabel('Time (ms)')
-            ax.set_ylabel('Difference in Amplitude')
-            ax.set_title('Difference: FAR minus CLOSE')
-            ax.grid(True, alpha=0.3)
-
-            plt.tight_layout()
-
-            # Save plot
-            plot_file = output_dir / f'trf_{pred_name}_comparison.png'
-            plt.savefig(plot_file, dpi=300, bbox_inches='tight')
-            plt.close()
-            print(f"  ✓ Saved: {plot_file}")
-
-        print("\n" + "="*70)
-        print("HYPOTHESIS TEST: SURPRISAL SENSITIVITY")
-        print("="*70)
-
-        if 'surprisal' in predictor_names:
-            h_far = results['far']['trf'].h[predictor_names.index('surprisal')]
-            h_close = results['close']['trf'].h[predictor_names.index('surprisal')]
-
-            # Compute peak amplitudes
-            data_far = np.mean(h_far.x, axis=0) if len(h_far.x.shape) > 1 else h_far.x
-            data_close = np.mean(h_close.x, axis=0) if len(h_close.x.shape) > 1 else h_close.x
-
-            peak_far = np.max(np.abs(data_far))
-            peak_close = np.max(np.abs(data_close))
-
-            times = h_far.time.times if hasattr(h_far.time, 'times') else h_far.time
-            peak_time_far = times[np.argmax(np.abs(data_far))] * 1000
-            peak_time_close = times[np.argmax(np.abs(data_close))] * 1000
-
-            print(f"\nSurprisal TRF comparison:")
-            print(f"  FAR (first half):   Peak = {peak_far:.2e} at {peak_time_far:.0f}ms")
-            print(f"  CLOSE (second half): Peak = {peak_close:.2e} at {peak_time_close:.0f}ms")
+        print(f"\nSurprisal TRF comparison:")
+        print(f"  FAR (first half):   Peak = {peak_far:.2e} at {peak_time_far:.0f}ms")
+        print(f"  CLOSE (second half): Peak = {peak_close:.2e} at {peak_time_close:.0f}ms")
+        if peak_far > 0:
             print(f"  Reduction: {(1 - peak_close/peak_far)*100:.1f}%")
 
-            if peak_close < peak_far:
-                print(f"\n✓ HYPOTHESIS SUPPORTED: Surprisal sensitivity is reduced when close to boundary")
-            else:
-                print(f"\n✗ HYPOTHESIS NOT SUPPORTED: Surprisal sensitivity is NOT reduced when close to boundary")
+        if peak_close < peak_far:
+            print(f"\n✓ HYPOTHESIS SUPPORTED: Surprisal sensitivity is reduced when close to boundary")
         else:
-            print("Surprisal predictor not included in analysis")
-
-        print("\n✓ Stratified analysis complete!")
-        print(f"Output directory: {output_dir}")
-
+            print(f"\n✗ HYPOTHESIS NOT SUPPORTED: Surprisal sensitivity is NOT reduced when close to boundary")
     else:
-        print("\n✗ ERROR: Could not fit both stratification levels")
-        return None
+        print("Surprisal predictor not included in analysis")
+
+    print("\n✓ Stratified analysis complete!")
+    print(f"Output directory: {output_dir}")
 
     return results
 
