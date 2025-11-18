@@ -89,7 +89,7 @@ for SUBJECT in "${SUBJECTS[@]}"; do
     echo ""
     echo "Step 7: TRF analysis (speaker: $SPEAKER)"
     python scripts/analyze_trf_combined.py "$SUBJECT" --compare --speaker "$SPEAKER" \
-        --tstart -0.05 --tstop 0.6 --crop-start -0.05 --crop-stop 0.55
+        --tstart -0.2 --tstop 0.6 --crop-start -0.1 --crop-stop 0.55
 
     deactivate
 
