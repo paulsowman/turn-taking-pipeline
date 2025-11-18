@@ -557,15 +557,36 @@ def compare_conditions(subject, speaker='participant', predictors_to_use=None,
     print(f"COMPARING CONDITIONS - {speaker.upper()}")
     print(f"{'='*70}\n")
 
-    # Analyze both conditions
+    # Analyze conversation condition
     trf_conv = analyze_condition(subject, 'conversation', speaker=speaker, predictors_to_use=predictors_to_use,
                                 tstart=tstart, tstop=tstop, crop_start=crop_start, crop_stop=crop_stop)
-    trf_nursery = analyze_condition(subject, 'nursery_rhyme', speaker=speaker, predictors_to_use=predictors_to_use,
-                                   tstart=tstart, tstop=tstop, crop_start=crop_start, crop_stop=crop_stop)
 
-    if trf_conv is None or trf_nursery is None:
-        print("\n✗ ERROR: Failed to fit one or both conditions")
+    if trf_conv is None:
+        print("\n✗ ERROR: Failed to fit conversation condition")
         return None, None
+
+    # Try to analyze nursery_rhyme condition (may not exist if runs failed)
+    trf_nursery = None
+    nursery_file = f'outputs/trf_combined/{subject}/{subject}_nursery_rhyme_trf_raw.fif'
+    import os
+    if not os.path.exists(nursery_file):
+        print(f"\n⚠ Warning: Nursery rhyme condition not found for {subject}")
+        print(f"  Missing file: {nursery_file}")
+        print(f"  Skipping nursery rhyme comparison - only conversation results will be saved")
+        return trf_conv, None
+
+    try:
+        trf_nursery = analyze_condition(subject, 'nursery_rhyme', speaker=speaker, predictors_to_use=predictors_to_use,
+                                       tstart=tstart, tstop=tstop, crop_start=crop_start, crop_stop=crop_stop)
+    except Exception as e:
+        print(f"\n⚠ Warning: Failed to analyze nursery_rhyme condition: {e}")
+        print(f"  Continuing with conversation-only results")
+        return trf_conv, None
+
+    if trf_nursery is None:
+        print("\n⚠ Warning: Failed to fit nursery_rhyme condition")
+        print("  Continuing with conversation-only results")
+        return trf_conv, None
 
     # Compare model performance
     print("\n" + "="*70)
@@ -698,9 +719,12 @@ def main():
             crop_stop=args.crop_stop
         )
 
-        if trf_conv is not None and trf_nursery is not None:
+        if trf_conv is not None:
             print("\n" + "="*70)
-            print("COMPARISON COMPLETE")
+            if trf_nursery is not None:
+                print("COMPARISON COMPLETE")
+            else:
+                print("CONVERSATION ANALYSIS COMPLETE (nursery_rhyme skipped)")
             print("="*70)
             print(f"\nResults saved to: outputs/trf_analysis/{args.subject}/")
 

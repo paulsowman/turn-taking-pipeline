@@ -114,7 +114,10 @@ for i in {1..32}; do
     echo ""
     echo "Step 7: TRF analysis (speaker: $SPEAKER)"
     python scripts/analyze_trf_combined.py "$SUBJECT" --compare --speaker "$SPEAKER" \
-        --tstart -0.2 --tstop 0.6 --crop-start -0.1 --crop-stop 0.55
+        --tstart -0.2 --tstop 0.6 --crop-start -0.1 --crop-stop 0.55 || {
+        echo "⚠ Warning: TRF analysis failed for $SUBJECT (possibly missing nursery_rhyme data)"
+        echo "  Continuing to next step..."
+    }
 
     # Step 8: Turn-taking predictor exploration (optional diagnostic)
     echo ""
@@ -122,7 +125,10 @@ for i in {1..32}; do
     # Only run for conversation condition and specific speaker (not both)
     if [[ "$SPEAKER" != "both" ]]; then
         echo "  Visualizing distance and proportion predictors for conversation..."
-        python scripts/explore_distance_to_turn.py --subject "$SUBJECT" --condition conversation --speaker "$SPEAKER"
+        python scripts/explore_distance_to_turn.py --subject "$SUBJECT" --condition conversation --speaker "$SPEAKER" || {
+            echo "⚠ Warning: Diagnostic exploration failed for $SUBJECT"
+            echo "  Continuing to next step..."
+        }
     else
         echo "  Skipping (speaker='both' - run separately for interviewer/participant)"
     fi
@@ -134,7 +140,10 @@ for i in {1..32}; do
     if [[ "$SPEAKER" != "both" ]]; then
         echo "  Testing surprisal sensitivity modulation for conversation..."
         python scripts/analyze_trf_stratified.py "$SUBJECT" --condition conversation --speaker "$SPEAKER" \
-            --tstart -0.2 --tstop 0.6
+            --tstart -0.2 --tstop 0.6 || {
+            echo "⚠ Warning: Stratified TRF analysis failed for $SUBJECT"
+            echo "  Continuing to next subject..."
+        }
     else
         echo "  Skipping (speaker='both' - run separately for interviewer/participant)"
     fi
