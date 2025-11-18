@@ -172,6 +172,22 @@ def analyze_stratified_trf(
         print(f"FITTING TRF: {stratum_name.upper()} FROM BOUNDARY")
         print("="*70)
 
+        # Identify continuous segments in the mask
+        # Find where mask transitions from False to True (segment starts)
+        # and True to False (segment ends)
+        mask_diff = np.diff(mask.astype(int))
+        segment_starts = np.where(mask_diff == 1)[0] + 1  # Transition to True
+        segment_ends = np.where(mask_diff == -1)[0] + 1   # Transition to False
+
+        # Handle edge cases
+        if mask[0]:
+            segment_starts = np.concatenate([[0], segment_starts])
+        if mask[-1]:
+            segment_ends = np.concatenate([segment_ends, [len(mask)]])
+
+        n_segments = len(segment_starts)
+        print(f"\nIdentified {n_segments} continuous segments in {stratum_name} condition")
+
         # Extract only the masked time points for all channels
         # This creates discontinuous data, which we'll concatenate
 
@@ -179,6 +195,22 @@ def analyze_stratified_trf(
         meg_picks = mne.pick_types(raw.info, meg=True)
         meg_data_full, _ = raw[meg_picks, :]
         meg_data_masked = meg_data_full[:, mask]  # Shape: (n_sensors, n_masked_samples)
+
+        # Create mapping from concatenated index to segment boundaries
+        # We need to mark concatenation points as bad
+        concatenated_length = np.sum(mask)
+        cumulative_lengths = []
+        current_pos = 0
+        for i, (start, end) in enumerate(zip(segment_starts, segment_ends)):
+            seg_len = end - start
+            cumulative_lengths.append(current_pos + seg_len)
+            current_pos += seg_len
+
+        # Concatenation boundaries are at cumulative_lengths[:-1]
+        # (the last one is just the end of data)
+        boundary_indices = cumulative_lengths[:-1]
+
+        print(f"Concatenation boundaries at samples: {boundary_indices}")
 
         # Convert to eelbrain NDVar
         n_masked_samples = np.sum(mask)
@@ -217,10 +249,46 @@ def analyze_stratified_trf(
         predictor_names = list(predictors.keys())
         predictor_ndvars = tuple(predictors.values())
 
+        # Create exclusion mask for concatenation boundaries
+        # Exclude samples within TRF window of boundaries to avoid spurious correlations
+        trf_buffer = max(abs(tstart), abs(tstop))
+        buffer_samples = int(np.ceil(trf_buffer * raw.info['sfreq']))
+
+        exclusion_mask = np.ones(n_masked_samples, dtype=bool)
+        n_excluded = 0
+        for boundary_idx in boundary_indices:
+            # Exclude samples around this boundary
+            start_excl = max(0, boundary_idx - buffer_samples)
+            end_excl = min(n_masked_samples, boundary_idx + buffer_samples)
+            exclusion_mask[start_excl:end_excl] = False
+            n_excluded += (end_excl - start_excl)
+
+        print(f"\nExcluding concatenation boundaries:")
+        print(f"  TRF window: {tstart*1000:.0f} to {tstop*1000:.0f}ms")
+        print(f"  Buffer: ±{trf_buffer*1000:.0f}ms (±{buffer_samples} samples)")
+        print(f"  Boundaries: {len(boundary_indices)}")
+        print(f"  Excluded samples: {n_excluded} ({n_excluded/n_masked_samples*100:.1f}%)")
+        print(f"  Remaining for TRF: {np.sum(exclusion_mask)} samples ({np.sum(exclusion_mask)/raw.info['sfreq']:.1f}s)")
+
+        # Apply exclusion mask to MEG and predictors by setting excluded periods to NaN
+        # Eelbrain boosting will skip NaN values
+        meg_data_clean = meg_data_masked.copy()
+        meg_data_clean[:, ~exclusion_mask] = np.nan
+        meg = eelbrain.NDVar(meg_data_clean, dims=(sensor_dim, time_dim), name='MEG')
+
+        # Update predictors with exclusion mask
+        predictors_clean = {}
+        for name in predictor_names:
+            # Get already-masked predictor data and apply exclusion mask
+            pred_data_masked = predictors[name].x.copy()
+            pred_data_masked[~exclusion_mask] = np.nan
+            predictors_clean[name] = eelbrain.NDVar(pred_data_masked, dims=(time_dim,), name=name)
+
+        predictor_ndvars = tuple(predictors_clean.values())
+
         # Fit TRF
         print(f"\nFitting TRF for {stratum_name} condition...")
         print(f"  Window: {tstart*1000:.0f}ms to {tstop*1000:.0f}ms")
-        print(f"  Data duration: {duration_far if stratum_name == 'far' else duration_close:.1f}s")
 
         try:
             trf = eelbrain.boosting(
