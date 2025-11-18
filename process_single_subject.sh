@@ -90,11 +90,39 @@ echo "Step 7: TRF analysis (speaker: $SPEAKER)"
 python scripts/analyze_trf_combined.py "$SUBJECT" --compare --speaker "$SPEAKER" \
     --tstart -0.2 --tstop 0.6 --crop-start -0.1 --crop-stop 0.55
 
+# Step 8: Turn-taking predictor exploration (optional diagnostic)
+echo ""
+echo "Step 8: Explore turn-taking predictors (diagnostic)"
+# Only run for conversation condition and specific speaker (not both)
+if [[ "$SPEAKER" != "both" ]]; then
+    echo "  Visualizing distance and proportion predictors for conversation..."
+    python scripts/explore_distance_to_turn.py --subject "$SUBJECT" --condition conversation --speaker "$SPEAKER"
+else
+    echo "  Skipping (speaker='both' - run separately for interviewer/participant)"
+fi
+
+# Step 9: Stratified TRF analysis (turn-taking hypothesis)
+echo ""
+echo "Step 9: Stratified TRF analysis (turn-taking hypothesis)"
+# Only run for conversation condition and specific speaker (not both)
+if [[ "$SPEAKER" != "both" ]]; then
+    echo "  Testing surprisal sensitivity modulation for conversation..."
+    python scripts/analyze_trf_stratified.py "$SUBJECT" --condition conversation --speaker "$SPEAKER" \
+        --tstart -0.2 --tstop 0.6
+else
+    echo "  Skipping (speaker='both' - run separately for interviewer/participant)"
+fi
+
 deactivate
 
 echo ""
 echo "========================================================================"
 echo "✓ $SUBJECT PROCESSING COMPLETE"
 echo "========================================================================"
-echo "Results are in: outputs/trf_analysis/$SUBJECT/"
+echo "Results:"
+echo "  - Basic TRF: outputs/trf_analysis/$SUBJECT/"
+if [[ "$SPEAKER" != "both" ]]; then
+    echo "  - Stratified TRF: outputs/trf_analysis/$SUBJECT/conversation_stratified_$SPEAKER/"
+    echo "  - Diagnostics: outputs/diagnostics/"
+fi
 echo ""

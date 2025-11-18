@@ -139,30 +139,30 @@ outputs/sync/{subject}/run-{run}/
 
 ### Step 5: Create TRF Predictor Files
 
-**Purpose:** Generate 19 TRF predictors at MEG sampling rate and add as MISC channels
+**Purpose:** Generate 23 TRF predictors at MEG sampling rate and add as MISC channels
 
 **Input:**
-- MEG files (1000 Hz native sampling)
+- MEG files (1000 Hz native sampling, or downsampled to 100 Hz)
 - External audio (for envelopes, F0)
 - MFA transcripts with MEG-aligned boundaries (from Steps 3+4)
 - Sync parameters (from Step 4)
 
 **Command:**
 ```bash
-# Single subject/run
-python scripts/create_trf_fif.py --subject sub-01 --runs 1
+# Single subject/run with 100 Hz downsampling (RECOMMENDED)
+python scripts/create_trf_fif.py --subject sub-01 --runs 1 --downsample 100
 
 # Single subject, all runs
-python scripts/create_trf_fif.py --subject sub-01 --runs 1 2 3 4 5
+python scripts/create_trf_fif.py --subject sub-01 --runs 1 2 3 4 5 --downsample 100
 
 # All subjects/runs
-python scripts/create_trf_fif.py --all
+python scripts/create_trf_fif.py --all --downsample 100
 
 # Skip surprisal computation (faster, for testing)
-python scripts/create_trf_fif.py --subject sub-01 --runs 1 --no-surprisal
+python scripts/create_trf_fif.py --subject sub-01 --runs 1 --downsample 100 --no-surprisal
 
 # Overwrite existing files
-python scripts/create_trf_fif.py --subject sub-01 --runs 1 2 3 4 5 --overwrite
+python scripts/create_trf_fif.py --subject sub-01 --runs 1 2 3 4 5 --downsample 100 --overwrite
 ```
 
 **Output:**
@@ -171,9 +171,9 @@ outputs/trf/{subject}/run-{run}/
 └── {subject}_run-{run}_trf_raw.fif
 ```
 
-**Contains:** MEG channels + 19 MISC predictor channels:
+**Contains:** MEG channels + 23 MISC predictor channels:
 
-**Interviewer (9 channels):**
+**Interviewer (11 channels):**
 1. `MISC_envelope_interviewer` - Audio envelope (RMS)
 2. `MISC_envelope_meg_mic7` - MEG mic envelope (sync verification)
 3. `MISC_f0_interviewer` - F0 contour (normalized 0-1)
@@ -183,12 +183,16 @@ outputs/trf/{subject}/run-{run}/
 7. `MISC_f0_deviation_interviewer` - Z-scored F0 deviations
 8. `MISC_duration_deviation_interviewer` - Z-scored duration deviations
 9. `MISC_pause_interviewer` - Time since last word (normalized)
+10. `MISC_distance_to_turn_interviewer` - Distance to next turn boundary (seconds, capped at 5s)
+11. `MISC_proportion_through_turn_interviewer` - Proportion through current turn (0-1)
 
-**Participant (9 channels):** Same as above
+**Participant (11 channels):** Same as above
 
 **Shared (1 channel):** `MISC_speaker` (0=silence, 1=interviewer, 2=participant, 3=overlap)
 
 **Time:** ~2-5 minutes per run (with surprisal), ~1 minute without
+
+**Note:** Downsampling to 100 Hz is now the recommended default for ~10x speedup in TRF fitting with minimal accuracy loss.
 
 ---
 
@@ -293,7 +297,144 @@ python scripts/envelope_trf.py sub-01 --condition conversation
 
 ---
 
-### Step 8: Quick ERF Validation (Optional)
+### Step 8: Stratified TRF Analysis (Turn-Taking Hypothesis)
+
+**Purpose:** Test hypothesis that surprisal sensitivity decreases as listeners prepare to take their turn
+
+**Input:**
+- Combined TRF FIF files from Step 6 (must include proportion-through-turn predictors)
+
+**Command:**
+```bash
+# Analyze interviewer speech (participant listening/preparing to speak)
+python scripts/analyze_trf_stratified.py sub-01 --condition conversation --speaker interviewer
+
+# Analyze participant speech (interviewer listening/preparing to speak)
+python scripts/analyze_trf_stratified.py sub-01 --condition conversation --speaker participant
+
+# Custom time window
+python scripts/analyze_trf_stratified.py sub-01 --condition conversation --speaker interviewer \
+    --tstart -0.2 --tstop 0.6
+
+# Subset of predictors
+python scripts/analyze_trf_stratified.py sub-01 --condition conversation --speaker interviewer \
+    --predictors envelope surprisal word_onsets
+```
+
+**Method:**
+Uses **implicit masking** approach (like speaker selection):
+1. Creates duplicate predictors for each stratification level:
+   - `{predictor}_far`: Active in first half of turns (proportion < 0.5)
+   - `{predictor}_close`: Active in second half of turns (proportion >= 0.5)
+2. Fits single TRF model with all stratified predictors (12 total for 6 base predictors)
+3. Compares kernels between FAR and CLOSE conditions
+
+**Stratification Logic:**
+- When analyzing **interviewer speech** with `--speaker interviewer`:
+  - Uses `proportion_through_turn_participant` (listener's perspective)
+  - FAR = participant in first half of interviewer's turns
+  - CLOSE = participant in second half of interviewer's turns (preparing to speak)
+- Hypothesis: Surprisal TRF amplitude should be smaller in CLOSE condition
+
+**Output:**
+```
+outputs/trf_analysis/{subject}/{condition}_stratified_{speaker}/
+├── trf_stratified_model.pickle
+├── trf_envelope_comparison.png (FAR vs CLOSE overlay + difference)
+├── trf_word_onsets_comparison.png
+├── trf_surprisal_comparison.png
+├── trf_f0_deviation_comparison.png
+├── trf_duration_deviation_comparison.png
+└── trf_pause_comparison.png
+```
+
+**Comparison plots include:**
+- Panel 1: Overlay of FAR (blue) and CLOSE (red) TRF kernels
+- Panel 2: Difference plot (FAR - CLOSE) with shaded area
+
+**Hypothesis test output:**
+```
+HYPOTHESIS TEST: SURPRISAL SENSITIVITY
+======================================================================
+
+Surprisal TRF comparison:
+  FAR (first half):   Peak = 2.45e-05 at 350ms
+  CLOSE (second half): Peak = 1.82e-05 at 340ms
+  Reduction: 25.7%
+
+✓ HYPOTHESIS SUPPORTED: Surprisal sensitivity is reduced when close to boundary
+```
+
+**Time:** ~9 minutes per analysis at 100 Hz
+
+**Key Advantages:**
+- No concatenation artifacts (continuous data)
+- No boundary exclusion needed
+- Consistent with existing pipeline design
+- Direct comparison within single model
+
+---
+
+### Step 9: Explore Turn-Taking Predictors (Optional Diagnostic)
+
+**Purpose:** Visualize distribution of distance and proportion predictors to guide stratification
+
+**Command:**
+```bash
+# Default: first 60 seconds
+python scripts/explore_distance_to_turn.py --subject sub-01 --condition conversation --speaker interviewer
+
+# Custom time window
+python scripts/explore_distance_to_turn.py --subject sub-01 --condition conversation --speaker interviewer \
+    --window 0 120
+```
+
+**Output:**
+```
+outputs/diagnostics/
+└── sub-01_conversation_interviewer_distance_to_turn.png
+```
+
+**Visualizations:**
+- Left column: Distance-to-turn predictor
+  - Time series with threshold lines (1.0s, 2.0s)
+  - Histogram showing distribution
+  - Cumulative distribution function
+- Right column: Proportion-through-turn predictor
+  - Time series with halfway line (0.5)
+  - Histogram (perfectly balanced 50/50 split)
+  - Cumulative distribution
+
+**Statistics printed:**
+```
+TURN-TAKING PREDICTOR STATISTICS
+======================================================================
+Speaker: interviewer
+Condition: conversation
+
+--- DISTANCE-TO-TURN ---
+  Mean: 2.82 seconds
+  Median: 2.70 seconds
+
+Fixed-threshold stratification (using distance):
+  Close to boundary: distance < 1.0s (22.6% of data)
+  Far from boundary: distance > 2.0s (59.9% of data)
+
+--- PROPORTION-THROUGH-TURN (RECOMMENDED) ---
+  Valid samples (during listening): 54524 / 112500 (48.5%)
+  Mean: 0.499
+  Median: 0.499
+
+Turn-length normalized stratification (using proportion):
+  First half of turns: proportion < 0.5 (50.1% of listening)
+  Second half of turns: proportion >= 0.5 (49.9% of listening)
+```
+
+**Time:** <1 minute
+
+---
+
+### Step 10: Quick ERF Validation (Optional)
 
 **Purpose:** Fast sanity check for timing and preprocessing (~2 minutes vs 90 for TRF)
 
@@ -332,7 +473,7 @@ outputs/erf_analysis/{subject}/{condition}/{speaker}/
 
 ---
 
-### Step 9: Group-Level Analysis
+### Step 11: Group-Level Analysis
 
 **Purpose:** Grand average TRF across subjects, statistical testing
 
@@ -358,31 +499,36 @@ outputs/trf_analysis/group_results/
 
 ## Complete Pipeline Examples
 
-### Example 1: Process Single Subject from Scratch
+### Example 1: Process Single Subject from Scratch (with Turn-Taking Analysis)
 
 ```bash
 # Full pipeline for sub-01
 python scripts/transcribe_dual_speaker.py --subject sub-01 --run 1 2 3 4 5
 python scripts/whisper_to_mfa.py --subject sub-01
 python scripts/run_mfa_alignment.py --subject sub-01
-python scripts/run_audio_meg_sync.py --subject sub-01 --run 1 2 3 4 5
-python scripts/create_trf_fif.py --subject sub-01 --runs 1 2 3 4 5
+python scripts/batch_audio_meg_sync.py --subjects sub-01 --runs 1 2 3 4 5
+python scripts/create_trf_fif.py --subject sub-01 --runs 1 2 3 4 5 --downsample 100
 python scripts/combine_runs.py --subject sub-01
 python scripts/analyze_trf_combined.py sub-01 --compare --speaker both
+
+# Turn-taking hypothesis testing
+python scripts/explore_distance_to_turn.py --subject sub-01 --condition conversation --speaker interviewer
+python scripts/analyze_trf_stratified.py sub-01 --condition conversation --speaker interviewer
 
 # Quick validation (optional)
 python scripts/compute_word_erf.py sub-01 --condition conversation --split-by-surprisal
 ```
 
-**Total time:** ~2-3 hours per subject (mostly TRF fitting)
+**Total time:** ~30-45 minutes per subject at 100 Hz
 
-### Example 2: Regenerate TRF Files Only
+### Example 2: Regenerate TRF Files Only (e.g., add new predictors)
 
 ```bash
 # If you already have transcripts/MFA/sync and just want to recreate predictors
-python scripts/create_trf_fif.py --subject sub-01 --runs 1 2 3 4 5 --overwrite
-python scripts/combine_runs.py --subject sub-01
+python scripts/create_trf_fif.py --subject sub-01 --runs 1 2 3 4 5 --downsample 100 --overwrite
+python scripts/combine_runs.py --subject sub-01 --overwrite
 python scripts/analyze_trf_combined.py sub-01 --compare
+python scripts/analyze_trf_stratified.py sub-01 --condition conversation --speaker interviewer
 ```
 
 ### Example 3: Process All Subjects
@@ -393,32 +539,10 @@ python scripts/transcribe_dual_speaker.py --all
 python scripts/whisper_to_mfa.py --all
 python scripts/run_mfa_alignment.py --all
 python scripts/batch_audio_meg_sync.py
-python scripts/create_trf_fif.py --all
+python scripts/create_trf_fif.py --all --downsample 100
 python scripts/combine_runs.py --all
 python scripts/batch_multipredictor_trf_parallel.py
 python scripts/group_average_trf.py
-```
-
----
-
-## Future Optimization: 100 Hz Downsampling
-
-**Current:** Data processed at 1000 Hz (1ms resolution)
-- TRF fitting: ~90 min per condition
-- Total data size: ~10x larger
-
-**Planned:** Downsample to 100 Hz (10ms resolution) **before** creating predictors
-- TRF fitting: ~9 min per condition (10x speedup)
-- 10ms resolution adequate for word-level analysis (~200ms between words)
-- Avoids anti-aliasing artifacts from post-hoc downsampling
-
-**To implement:** Modify `create_trf_fif.py` to downsample MEG data before creating predictor channels (see TODO at lines 8-21)
-
-```bash
-# After implementation:
-python scripts/create_trf_fif.py --subject sub-01 --runs 1 2 3 4 5 --downsample 100 --overwrite
-python scripts/combine_runs.py --subject sub-01
-python scripts/analyze_trf_combined.py sub-01 --compare  # Now ~9 min instead of 90!
 ```
 
 ---
@@ -545,15 +669,18 @@ pip install transformers torch  # For GPT-2 surprisal
 
 ---
 
-## TODO List
+## Key Features Update Summary
 
-- [ ] Implement 100 Hz downsampling in `create_trf_fif.py` (see lines 8-21)
-- [ ] Add "closeness to turn boundary" predictor (see `analyze_trf_combined.py` lines 97-105)
-- [ ] Test interaction terms (surprisal × closeness, f0 × closeness)
-- [ ] Optimize GPT-2 surprisal computation (batch processing)
-- [ ] Add progress bars to long-running scripts
-- [ ] Implement parallel TRF fitting across subjects
+### Implemented (2025-11)
+- ✅ 100 Hz downsampling with `--downsample` flag (~10x speedup)
+- ✅ Turn-taking predictors: distance-to-turn and proportion-through-turn
+- ✅ Stratified TRF analysis for testing turn-taking hypotheses
+- ✅ Implicit masking approach (no concatenation artifacts)
+- ✅ Diagnostic visualization for turn-taking predictors
+
+### Active Research Questions
+See [TODO.md](TODO.md) for detailed research tasks and implementation notes.
 
 ---
 
-**Last updated:** 2025-11-15
+**Last updated:** 2025-11-18
