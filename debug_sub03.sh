@@ -298,8 +298,8 @@ elif [ ! -d "$FEATURES_DIR" ]; then
     echo -e "${YELLOW}→ Run MFA alignment:${NC}"
     echo "  python scripts/run_mfa_alignment.py --subject ${SUBJECT} --run ${RUN_NUM}"
 else
-    echo -e "${YELLOW}→ Re-run MFA alignment with verbose output:${NC}"
-    echo "  python scripts/run_mfa_alignment.py --subject ${SUBJECT} --run ${RUN_NUM} --verbose"
+    echo -e "${YELLOW}→ Re-run MFA alignment:${NC}"
+    echo "  python scripts/run_mfa_alignment.py --subject ${SUBJECT} --run ${RUN_NUM}"
     echo ""
     echo -e "${YELLOW}→ Check audio file properties:${NC}"
     echo "  ffprobe ${AUDIO_INTERVIEWER}"
