@@ -1,9 +1,0 @@
-{
-  "subject": "sub-22",
-  "sensor_type": "eeg",
-  "n_events": 198,
-  "erf_peak_latency_ms": 34.0,
-  "erf_peak_channel": "TP10",
-  "trf_correlation_mean": 0.03345128052464483,
-  "trf_correlation_max": 0.10631770034991628
-}
